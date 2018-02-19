@@ -115,9 +115,11 @@ def normalize(s):
     # Replace ips
     s = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', ' _ip_ ', s)
     # Isolate punctuation
-    s = re.sub(r'([\'\"\.\(\)\!\?\-\\\/\,])', r' \1 ', s).replace('\1', '')
-    # Remove some special characters
-    s = re.sub(r'([\;\:\|•«\n])', ' ', s)
+    s = re.sub(r'([\'\"\.\(\)\!\?\-\\\/\,\#])', r' \1 ', s).replace('\1', '')
+    # Remove some special characters 
+    s = re.sub(r'([\;\:\|•«\n=:;",.\/—\-\(\)~\[\]\_\#])', ' ', s)
+    # Remove special word
+    s = re.sub(r'([☺☻♥♦♣♠•◘○♂♀♪♫☼►◄])', ' ', s)
     # Remove new lines
     # Replace numbers and symbols with language
     s = s.replace('&', ' and ')
@@ -327,7 +329,11 @@ def build_attention_model():
 def build_lstm_stack_model(logdir='attention'):
     # Bidirectional-LSTM
     inp = Input(shape=(window_length, 300))
-    l_lstm = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(inp)
+
+    # Attention before LSTM
+    attention_mul1 = attention_3d_block(inp, name='inp')
+
+    l_lstm = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(attention_mul1)
     l_dense = TimeDistributed(Dense(50))(l_lstm)
     #sentEncoder = Model(inputs=inp, outputs=l_dense)
 
