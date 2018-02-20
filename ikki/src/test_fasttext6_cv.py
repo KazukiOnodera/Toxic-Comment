@@ -43,63 +43,63 @@ def remove_accent_before_tokens(sentences):
     res = unidecode.unidecode(sentences)
     return(res)
 
-# Expanding contraction 
-CONTRACTION_MAP = {"ain't": "is not", "aren't": "are not","can't": "cannot", 
-                   "can't've": "cannot have", "'cause": "because", "could've": "could have", 
-                   "couldn't": "could not", "couldn't've": "could not have","didn't": "did not", 
-                   "doesn't": "does not", "don't": "do not", "hadn't": "had not", 
-                   "hadn't've": "had not have", "hasn't": "has not", "haven't": "have not", 
-                   "he'd": "he would", "he'd've": "he would have", "he'll": "he will", 
-                   "he'll've": "he he will have", "he's": "he is", "how'd": "how did", 
-                   "how'd'y": "how do you", "how'll": "how will", "how's": "how is", 
-                   "I'd": "I would", "I'd've": "I would have", "I'll": "I will", 
-                   "I'll've": "I will have","I'm": "I am", "I've": "I have", 
-                   "i'd": "i would", "i'd've": "i would have", "i'll": "i will", 
-                   "i'll've": "i will have","i'm": "i am", "i've": "i have", 
-                   "isn't": "is not", "it'd": "it would", "it'd've": "it would have", 
-                   "it'll": "it will", "it'll've": "it will have","it's": "it is", 
-                   "let's": "let us", "ma'am": "madam", "mayn't": "may not", 
-                   "might've": "might have","mightn't": "might not","mightn't've": "might not have", 
-                   "must've": "must have", "mustn't": "must not", "mustn't've": "must not have", 
-                   "needn't": "need not", "needn't've": "need not have","o'clock": "of the clock", 
+# Expanding contraction
+CONTRACTION_MAP = {"ain't": "is not", "aren't": "are not","can't": "cannot",
+                   "can't've": "cannot have", "'cause": "because", "could've": "could have",
+                   "couldn't": "could not", "couldn't've": "could not have","didn't": "did not",
+                   "doesn't": "does not", "don't": "do not", "hadn't": "had not",
+                   "hadn't've": "had not have", "hasn't": "has not", "haven't": "have not",
+                   "he'd": "he would", "he'd've": "he would have", "he'll": "he will",
+                   "he'll've": "he he will have", "he's": "he is", "how'd": "how did",
+                   "how'd'y": "how do you", "how'll": "how will", "how's": "how is",
+                   "I'd": "I would", "I'd've": "I would have", "I'll": "I will",
+                   "I'll've": "I will have","I'm": "I am", "I've": "I have",
+                   "i'd": "i would", "i'd've": "i would have", "i'll": "i will",
+                   "i'll've": "i will have","i'm": "i am", "i've": "i have",
+                   "isn't": "is not", "it'd": "it would", "it'd've": "it would have",
+                   "it'll": "it will", "it'll've": "it will have","it's": "it is",
+                   "let's": "let us", "ma'am": "madam", "mayn't": "may not",
+                   "might've": "might have","mightn't": "might not","mightn't've": "might not have",
+                   "must've": "must have", "mustn't": "must not", "mustn't've": "must not have",
+                   "needn't": "need not", "needn't've": "need not have","o'clock": "of the clock",
                    "oughtn't": "ought not", "oughtn't've": "ought not have", "shan't": "shall not",
-                   "sha'n't": "shall not", "shan't've": "shall not have", "she'd": "she would", 
-                   "she'd've": "she would have", "she'll": "she will", "she'll've": "she will have", 
-                   "she's": "she is", "should've": "should have", "shouldn't": "should not", 
-                   "shouldn't've": "should not have", "so've": "so have","so's": "so as", 
+                   "sha'n't": "shall not", "shan't've": "shall not have", "she'd": "she would",
+                   "she'd've": "she would have", "she'll": "she will", "she'll've": "she will have",
+                   "she's": "she is", "should've": "should have", "shouldn't": "should not",
+                   "shouldn't've": "should not have", "so've": "so have","so's": "so as",
                    "this's": "this is",
-                   "that'd": "that would", "that'd've": "that would have","that's": "that is", 
-                   "there'd": "there would", "there'd've": "there would have","there's": "there is", 
-                   "they'd": "they would", "they'd've": "they would have", "they'll": "they will", 
-                   "they'll've": "they will have", "they're": "they are", "they've": "they have", 
-                   "to've": "to have", "wasn't": "was not", "we'd": "we would", 
-                   "we'd've": "we would have", "we'll": "we will", "we'll've": "we will have", 
-                   "we're": "we are", "we've": "we have", "weren't": "were not", 
-                   "what'll": "what will", "what'll've": "what will have", "what're": "what are", 
-                   "what's": "what is", "what've": "what have", "when's": "when is", 
-                   "when've": "when have", "where'd": "where did", "where's": "where is", 
-                   "where've": "where have", "who'll": "who will", "who'll've": "who will have", 
-                   "who's": "who is", "who've": "who have", "why's": "why is", 
-                   "why've": "why have", "will've": "will have", "won't": "will not", 
-                   "won't've": "will not have", "would've": "would have", "wouldn't": "would not", 
+                   "that'd": "that would", "that'd've": "that would have","that's": "that is",
+                   "there'd": "there would", "there'd've": "there would have","there's": "there is",
+                   "they'd": "they would", "they'd've": "they would have", "they'll": "they will",
+                   "they'll've": "they will have", "they're": "they are", "they've": "they have",
+                   "to've": "to have", "wasn't": "was not", "we'd": "we would",
+                   "we'd've": "we would have", "we'll": "we will", "we'll've": "we will have",
+                   "we're": "we are", "we've": "we have", "weren't": "were not",
+                   "what'll": "what will", "what'll've": "what will have", "what're": "what are",
+                   "what's": "what is", "what've": "what have", "when's": "when is",
+                   "when've": "when have", "where'd": "where did", "where's": "where is",
+                   "where've": "where have", "who'll": "who will", "who'll've": "who will have",
+                   "who's": "who is", "who've": "who have", "why's": "why is",
+                   "why've": "why have", "will've": "will have", "won't": "will not",
+                   "won't've": "will not have", "would've": "would have", "wouldn't": "would not",
                    "wouldn't've": "would not have", "y'all": "you all", "y'all'd": "you all would",
                    "y'all'd've": "you all would have","y'all're": "you all are","y'all've": "you all have",
-                   "you'd": "you would", "you'd've": "you would have", "you'll": "you will", 
+                   "you'd": "you would", "you'd've": "you would have", "you'll": "you will",
                    "you'll've": "you will have", "you're": "you are", "you've": "you have" }
 
-def expand_contractions(sentence, contraction_mapping): 
-     
-    contractions_pattern = re.compile('({})'.format('|'.join(contraction_mapping.keys())),  
-                                      flags=re.IGNORECASE|re.DOTALL) 
-    def expand_match(contraction): 
-        match = contraction.group(0) 
-        first_char = match[0] 
-        expanded_contraction = contraction_mapping.get(match) if contraction_mapping.get(match) else contraction_mapping.get(match.lower())                        
-        expanded_contraction = first_char+expanded_contraction[1:] 
-        return expanded_contraction 
-         
-    expanded_sentence = contractions_pattern.sub(expand_match, sentence) 
-    return expanded_sentence 
+def expand_contractions(sentence, contraction_mapping):
+
+    contractions_pattern = re.compile('({})'.format('|'.join(contraction_mapping.keys())),
+                                      flags=re.IGNORECASE|re.DOTALL)
+    def expand_match(contraction):
+        match = contraction.group(0)
+        first_char = match[0]
+        expanded_contraction = contraction_mapping.get(match) if contraction_mapping.get(match) else contraction_mapping.get(match.lower())
+        expanded_contraction = first_char+expanded_contraction[1:]
+        return expanded_contraction
+
+    expanded_sentence = contractions_pattern.sub(expand_match, sentence)
+    return expanded_sentence
 
 def normalize(s):
     """
@@ -116,7 +116,7 @@ def normalize(s):
     s = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', ' _ip_ ', s)
     # Isolate punctuation
     s = re.sub(r'([\'\"\.\(\)\!\?\-\\\/\,\#])', r' \1 ', s).replace('\1', '')
-    # Remove some special characters 
+    # Remove some special characters
     s = re.sub(r'([\;\:\|•«\n=:;",.\/—\-\(\)~\[\]\_\#])', ' ', s)
     # Remove special word
     s = re.sub(r'([☺☻♥♦♣♠•◘○♂♀♪♫☼►◄])', ' ', s)
@@ -153,8 +153,8 @@ class IntervalEvaluation(Callback):
             score = roc_auc_score(self.y_val, y_pred, average=None, sample_weight=None)
             score_mean, score_std = np.mean(score), np.std(score)
             self.score_hitory.append([score_mean, score_std])
-            logging.info("interval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch, score_mean, score_std))
-            print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch, score_mean, score_std))
+            logging.info("interval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch+1, score_mean, score_std))
+            print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch+1, score_mean, score_std))
 
 """
 Function to generate training data
@@ -175,7 +175,7 @@ def text_to_vector(text):
     else:
         window_start_idx = np.random.choice(words_num - window_length + 1, 1)[0]
         window = words[window_start_idx:window_length]
-    
+
     x = np.zeros((window_length, n_features))
 
     for i, word in enumerate(window):
@@ -201,17 +201,17 @@ def data_generator(df, batch_size):
     batch_i = 0 # Counter inside the current batch vector
     batch_x = None # The current batch's x data
     batch_y = None # The current batch's y data
-    
+
     while True: # Loop forever
         df = df.sample(frac=1) # Shuffle df each epoch
-        
+
         for i, row in df.iterrows():
             comment = row['comment_text']
-            
+
             if batch_x is None:
                 batch_x = np.zeros((batch_size, window_length, n_features), dtype='float32')
                 batch_y = np.zeros((batch_size, len(classes)), dtype='float32')
-                
+
             batch_x[batch_i] = text_to_vector(comment)
             batch_y[batch_i] = row[classes].values
             batch_i += 1
@@ -370,26 +370,32 @@ n_splits = 5
 kf = KFold(n_splits=n_splits, random_state=random_state)
 
 # Make test dataset to fixed array
-x_test = df_to_data(test)
+#print('Converting test dataframe to array')
+#x_test = df_to_data(test)
 
 # Cross validation
 # Prediction of out-of-fold data
 pred_oof = pd.concat([train['id'], pd.DataFrame(np.zeros((train.shape[0], train.shape[1]-2)), columns=classes)], axis=1)
+auc_pred_oof = []
 # Prediction of test dataset
 pred_test = pd.read_csv('../input/sample_submission.csv')
 pred_test[classes] = 0.0  #> initialize
 
 
-for train_index, val_index in kf.split(train):
+for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
+    print('\nFold: {}'.format(fold_idx))
     # Train/validation dataset
     x_train, x_val = train.iloc[train_index], train.iloc[val_index]
     y_train, y_val = train[classes].iloc[train_index], train[classes].iloc[val_index]
 
     # Convert validation set to fixed array
+    print('Converting validation dataframe to array')
     x_val = df_to_data(x_val)
+    #validation_generator = data_generator_for_test(x_val, 1024)
     y_val = y_val.values
 
     # Build model
+    print('Building model')
     model = build_lstm_stack_model()
 
     # Parameters
@@ -401,6 +407,7 @@ for train_index, val_index in kf.split(train):
     ival = IntervalEvaluation(validation_data=(x_val, y_val), interval=1)
 
     # Training
+    print('Training model')
     callback_history = model.fit_generator(
                             training_generator,
                             steps_per_epoch=training_steps_per_epoch,
@@ -421,20 +428,25 @@ for train_index, val_index in kf.split(train):
     print('Averaged AUC of validation: {}+{}'.format(auc_val_mean, auc_val_std))
 
     # Predict test dataset several times at random
+    testing_generator = data_generator_for_test(test, 1024)
     pred_test_num = 10
-    y_test = np.array([]) 
+    y_test = np.array([])
     for i in range(pred_test_num):
         if i == 0:
-            y_test_pred = model.predict(x_test, batch_size=1024, verbose=1)
+            y_test_pred = model.predict_generator(testing_generator)
             y_test = np.expand_dims(y_test_pred, 2)
         else:
-            y_test_pred = model.predict(x_test, batch_size=1024, verbose=1)
+            y_test_pred = model.predict_generator(testing_generator)
             y_test_pred = np.expand_dims(y_test_pred, 2)
             y_test = np.concatenate([y_test, y_test_pred], axis=2)
     y_test = y_test.max(2)
 
     # Asign results to dataframe (divide followed by sum)
     pred_test[classes] += y_test / n_splits
+
+    # Save model every fold
+    from keras.models import load_model
+    model.save('../model/model_{}_{}.h5'.format(saving_filename, fold_idx))  # creates a HDF5 file 'my_model.h5'
 
 # AUC of cross-validation
 auc_pred_oof_fold = [auc_mean for auc_mean, auc_std in auc_pred_oof]
@@ -444,7 +456,6 @@ auc_pred_oof_std = np.std(auc_pred_oof_mean)
 # Save result of cross-validation
 pred_oof.to_csv('../output/{}_oof_{:.06f}_{:.06f}.csv'.format(saving_filename, auc_pred_oof_mean, auc_pred_oof_std), index=False)
 pred_test.to_csv('../output/{}_test.csv'.format(saving_filename), index=False)
-
 """
 sample_submission = pd.read_csv('../input/sample_submission.csv')
 test_fasttext1 = pd.read_csv('../output/test_fasttext_val0.9893_0.0037.csv')
@@ -455,5 +466,3 @@ sample_submission.to_csv('../output/avg_test_fasttext1_test_fasttext2.csv', inde
 # fasttext2: 0.9841
 # fasttext1+2: 0.9847
 """
-
-
