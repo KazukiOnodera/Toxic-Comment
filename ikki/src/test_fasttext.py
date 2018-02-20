@@ -1,11 +1,5 @@
 """
-参考
 https://www.kaggle.com/mschumacher/using-fasttext-models-for-robust-embeddings/notebook
-
-TODO: module化する
-1. raw data -> preprocessing data
-2. preprocessing data -> cross-validation -> prediction of out-of-fold and testset
-3. stacking...
 """
 import os
 import re
@@ -19,8 +13,7 @@ import logging
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers import Dense, Input, LSTM, GRU, Embedding, Dropout, Activation, Flatten
-from keras.layers import Bidirectional, GlobalMaxPool1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate
-
+from keras.layers import Bidirectional, GlobalMaxPool1D, TimeDistributed
 from keras.models import Model
 from keras import initializers, regularizers, constraints, optimizers, layers
 from keras.optimizers import SGD, RMSprop, Adam
@@ -30,20 +23,20 @@ from keras.engine.topology import Layer
 from keras import initializers
 
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import KFold
 
 
-window_length = 250 # The amount of words we look at per example. Experiment with this.
+window_length = 200 # The amount of words we look at per example. Experiment with this.
 
 """
-Preprocessing functions
+Remove accent marks
 """
-# Remove accent marks
 def remove_accent_before_tokens(sentences):
     res = unidecode.unidecode(sentences)
     return(res)
 
-# Expanding contraction 
+"""
+Expanding contraction 
+"""
 CONTRACTION_MAP = {"ain't": "is not", "aren't": "are not","can't": "cannot", 
                    "can't've": "cannot have", "'cause": "because", "could've": "could have", 
                    "couldn't": "could not", "couldn't've": "could not have","didn't": "did not", 
@@ -106,16 +99,14 @@ def normalize(s):
     Given a text, cleans and normalizes it. Feel free to add your own stuff.
     """
     s = s.lower()
-    # Special preprocessing
-    s = s.replace('ı', 'i')
     # Expand contractions
     s = expand_contractions(s, CONTRACTION_MAP)
     # Remove accent marks
-    #s = remove_accent_before_tokens(s)
+    s = remove_accent_before_tokens(s)
     # Replace ips
     s = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', ' _ip_ ', s)
     # Isolate punctuation
-    s = re.sub(r'([\'\"\.\(\)\!\?\-\\\/\,])', r' \1 ', s).replace('\1', '')
+    s = re.sub(r'([\'\"\.\(\)\!\?\-\\\/\,])', r' \1 ', s)
     # Remove some special characters
     s = re.sub(r'([\;\:\|•«\n])', ' ', s)
     # Remove new lines
@@ -134,29 +125,22 @@ def normalize(s):
     s = s.replace('9', ' nine ')
     return s
 
-"""
-Util functions for keras
-"""
-class IntervalEvaluation(Callback):
-    def __init__(self, validation_data=(), interval=1):
-        super(Callback, self).__init__()
+print('\nLoading data')
+train = pd.read_csv('../input/train.csv')
+test = pd.read_csv('../input/test.csv')
+train['comment_text'] = train['comment_text'].fillna('_empty_')
+test['comment_text'] = test['comment_text'].fillna('_empty_')
 
-        self.interval = interval
-        self.X_val, self.y_val = validation_data
-        self.score_hitory = []
 
-    def on_epoch_end(self, epoch, logs={}):
-        if epoch % self.interval == 0:
-            y_pred = self.model.predict(self.X_val, verbose=0)
-            score = roc_auc_score(self.y_val, y_pred, average=None, sample_weight=None)
-            score_mean, score_std = np.mean(score), np.std(score)
-            self.score_hitory.append([score_mean, score_std])
-            logging.info("interval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch, score_mean, score_std))
-            print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch, score_mean, score_std))
+# Loading FT model
+classes = [
+    'toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate'
+]
 
-"""
-Function to generate training data
-"""
+print('\nLoading FT model')
+ft_model = load_model('../external_data/pretrained/fasttext/wiki/wiki.en.bin')
+n_features = ft_model.get_dimension()
+
 def text_to_vector(text):
     """
     Given a string, normalizes it, then splits it into words and finally converts
@@ -192,6 +176,20 @@ def df_to_data(df):
 
     return x
 
+# Creating Training/Testing
+# Split the dataset:
+split_index = round(len(train) * 0.9)
+shuffled_train = train.sample(frac=1, random_state=0)
+df_train = shuffled_train.iloc[:split_index]
+df_val = shuffled_train.iloc[split_index:]
+
+# Convert validation set to fixed array
+x_val = df_to_data(df_val)
+y_val = df_val[classes].values
+
+x_test = df_to_data(test)
+
+
 def data_generator(df, batch_size):
     """
     Given a raw dataframe, generates infinite batches of FastText vectors.
@@ -222,48 +220,24 @@ def data_generator(df, batch_size):
                 batch_i = 0
 
 
-"""
-Data loading
-"""
-print("Loading train/test data")
-train = pd.read_csv('../input/train.csv')
-test = pd.read_csv('../input/test.csv')
 
-# target classes
-classes = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+class IntervalEvaluation(Callback):
+    def __init__(self, validation_data=(), interval=1):
+        super(Callback, self).__init__()
 
-"""
-Preprocessings
-"""
-# Replace nan value
-#train['comment_text'] = train['comment_text'].fillna('_empty_')
-#test['comment_text'] = test['comment_text'].fillna('_empty_')
+        self.interval = interval
+        self.X_val, self.y_val = validation_data
+        self.score_hitory = []
 
-# Replace miscellaneous characters
-train['comment_text'] = train['comment_text'].str.replace('ı', 'i')
-test['comment_text'] = test['comment_text'].str.replace('ı', 'i')
+    def on_epoch_end(self, epoch, logs={}):
+        if epoch % self.interval == 0:
+            y_pred = self.model.predict(self.X_val, verbose=0)
+            score = roc_auc_score(self.y_val, y_pred, average=None, sample_weight=None)
+            score_mean, score_std = np.mean(score), np.std(score)
+            self.score_hitory.append([score_mean, score_std])
+            logging.info("interval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch, score_mean, score_std))
+            print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch, score_mean, score_std))
 
-
-# Normalize comment_text (IMPLEMENTED IN GENERATOR)
-#train['comment_text'] = train['comment_text'].apply(normalize)
-#test['comment_text'] = test['comment_text'].apply(normalize)
-
-# Split comment_text (IMPLEMENTED IN GENERATOR)
-#train['comment_text'] = train['comment_text'].str.split()
-#test['comment_text'] = test['comment_text'].str.split()
-
-"""
-Loading FT model
-"""
-print('Loading FT model')
-ft_model = load_model('../external_data/pretrained/fasttext/wiki/wiki.en.bin')
-# Embedding dimension
-n_features = ft_model.get_dimension()
-
-
-"""
-Define models
-"""
 def build_model(logdir='.'):
     # Bidirectional-LSTM
     if logdir is not None and os.path.exists(logdir):
@@ -280,51 +254,36 @@ def build_model(logdir='.'):
 
     return model
 
-def attention_3d_block(inputs, name, single_attention_vector=False):
-    # inputs.shape = (batch_size, time_steps, input_dim)
-    input_dim = int(inputs.shape[2])
-    a = Permute((2, 1))(inputs)
-    a = Reshape((input_dim, window_length))(a) # this line is not useful. It's just to know which dimension is what.
-    a = Dense(window_length, activation='softmax')(a)
-    if single_attention_vector:
-        a = Lambda(lambda x: K.mean(x, axis=1), name='dim_reduction'+name)(a)
-        a = RepeatVector(input_dim)(a)
-    a_probs = Permute((2, 1), name='attention_vec'+name)(a)
-    output_attention_mul = Multiply(name='mul'+name)([inputs, a_probs])
-    return output_attention_mul
+class AttLayer(Layer):
+    def __init__(self, **kwargs):
+        self.init = initializers.get('normal')
+        #self.input_spec = [InputSpec(ndim=3)]
+        super(AttLayer, self).__init__(** kwargs)
 
-def build_attention_model():
-    # Bidirectional-GRU with Attention
-    inp = Input(shape=(window_length, 300))
+    def build(self, input_shape):
+        assert len(input_shape)==3
+        self.W = self.init((input_shape[-1],1))
+        #self.W = self.init((input_shape[-1],))
+        #self.input_spec = [InputSpec(shape=input_shape)]
+        self.trainable_weights = [self.W]
+        super(AttLayer, self).build(input_shape)  # be sure you call this somewhere!
 
-    # Attention before LSTM
-    #attention_mul1 = attention_3d_block(inp, name='inp')
+    def call(self, x, mask=None):
+        eij = K.tanh(K.dot(x, self.W))
 
-    l_lstm1 = Bidirectional(GRU(100, return_sequences=True, dropout=0.15, recurrent_dropout=0.15))(inp)
+        ai = K.exp(eij)
+        weights = ai/K.expand_dims(K.sum(ai, axis=1), 1)
+        #K.sum(ai, axis=1).dimshuffle(0,'x')
 
-    # Attention after LSTM
-    attention_mul1 = attention_3d_block(l_lstm1, name='l_lstm1')
+        weighted_input = x*K.expand_dims(weights, 2)
+        #weights.dimshuffle(0,1,'x')
+        return K.sum(weighted_input, axis=1)
 
-    #l_lstm2 = Bidirectional(GRU(50, return_sequences=True, dropout=0.15, recurrent_dropout=0.15))(attention_mul1)
-    #attention_mul2 = attention_3d_block(l_lstm2, name='l_lstm2')
+    def compute_output_shape(self, input_shape):
+        print(input_shape)
+        return (input_shape[0], input_shape[-1])
 
-    # Flatten attention vectors
-    attention_mul1 = Flatten()(attention_mul1)
-
-    inp_feat = Input(shape=(n_engineered_features,))
-    concat_feat = Concatenate()([attention_mul1, inp_feat])
-    x = Dropout(0.1)(concat_feat)
-    #x = Dense(216, activation="elu")(x)
-    #x = Dropout(0.4)(x)
-    x = Dense(512, activation="elu")(x)
-    x = Dropout(0.3)(x)
-    x = Dense(6, activation="sigmoid")(x)
-    model = Model(inputs=[inp, inp_feat], outputs=x)
-    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-3, amsgrad=True), metrics=['accuracy'])
-
-    return model
-
-def build_lstm_stack_model(logdir='attention'):
+def build_attention_model(logdir='attention'):
     # Bidirectional-LSTM
     if logdir is not None:
         if not os.path.exists(logdir):
@@ -332,15 +291,18 @@ def build_lstm_stack_model(logdir='attention'):
         tb_cb = TensorBoard(log_dir=logdir, histogram_freq=0, write_graph=True)
 
     inp = Input(shape=(window_length, 300))
-    l_lstm = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(inp)
+    l_lstm = Bidirectional(GRU(50, return_sequences=True))(inp)
     l_dense = TimeDistributed(Dense(50))(l_lstm)
+    #l_att = AttLayer()(l_dense)
     sentEncoder = Model(inputs=inp, outputs=l_dense)
 
-    l_lstm_sent = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(l_dense)
+    #review_input = Input(shape=(window_length, 300), dtype='float32')
+    #review_encoder = TimeDistributed(sentEncoder)(l_att)
+    l_lstm_sent = Bidirectional(GRU(50, return_sequences=True))(l_dense)
     l_dense_sent = TimeDistributed(Dense(50))(l_lstm_sent)
-
+    #l_att_sent = AttLayer()(l_dense_sent)
     x = GlobalMaxPool1D()(l_dense_sent)
-    x = Dense(256, activation="elu")(x)
+    x = Dense(128, activation="elu")(x)
     x = Dropout(0.5)(x)
     x = Dense(6, activation="sigmoid")(x)
     model = Model(inputs=inp, outputs=x)
@@ -349,102 +311,32 @@ def build_lstm_stack_model(logdir='attention'):
     return model
 
 
-"""
-Training and evaluating with cross-validation
-"""
-# Filename to save
-saving_filename = 'test_fasttext6_cv'
+# Build model
+model = build_attention_model()
+#model = build_model()
 
-# Define KFold and random state
-random_state = 407
-n_splits = 5
-kf = KFold(n_splits=n_splits, random_state=random_state)
+batch_size = 256
+training_steps_per_epoch = math.ceil(len(df_train) / batch_size)
+training_generator = data_generator(df_train, batch_size)
 
-# Make test dataset to fixed array
-x_test = df_to_data(test)
+ival = IntervalEvaluation(validation_data=(x_val, y_val), interval=1)
 
-# Cross validation
-# Prediction of out-of-fold data
-pred_oof = pd.concat([train['id'], pd.DataFrame(np.zeros((train.shape[0], train.shape[1]-2)), columns=classes)], axis=1)
-auc_pred_oof = []
-# Prediction of test dataset
-pred_test = pd.read_csv('../input/sample_submission.csv')
-pred_test[classes] = 0.0  #> initialize
+# Ready to start training:
+callback_history = model.fit_generator(
+    training_generator,
+    steps_per_epoch=training_steps_per_epoch,
+    epochs=5,
+    validation_data=(x_val, y_val),
+    #use_multiprocessing=True,
+    callbacks=[ival]
+)
 
+x_val_pred = model.predict(x_val, batch_size=1024, verbose=1)
+auc_val = roc_auc_score(y_val, x_val_pred, average=None, sample_weight=None)
+print('Averaged AUC of validation: {}+{}'.format(np.mean(auc_val), np.std(auc_val)))
 
-for train_index, val_index in kf.split(train):
-    # Train/validation dataset
-    x_train, x_val = train.iloc[train_index], train.iloc[val_index]
-    y_train, y_val = train[classes].iloc[train_index], train[classes].iloc[val_index]
-
-    # Convert validation set to fixed array
-    x_val = df_to_data(x_val)
-    y_val = y_val.values
-
-    # Build model
-    model = build_lstm_stack_model()
-
-    # Parameters
-    batch_size = 256
-    training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
-    training_generator = data_generator(x_train, batch_size)
-
-    # Callbacks
-    ival = IntervalEvaluation(validation_data=(x_val, y_val), interval=1)
-
-    # Training
-    callback_history = model.fit_generator(
-                            training_generator,
-                            steps_per_epoch=training_steps_per_epoch,
-                            epochs=10,
-                            validation_data=(x_val, y_val),
-                            callbacks=[ival]
-                            )
-
-    # Predict at validation dataset
-    y_val_pred = model.predict(x_val, batch_size=1024, verbose=1)
-    # Asign results to dataframe
-    pred_oof.loc[val_index, classes] = y_val_pred
-    # Evaluate validation results
-    auc_val = roc_auc_score(y_val, y_val_pred, average=None, sample_weight=None)
-    auc_val_mean = np.mean(auc_val)
-    auc_val_std = np.std(auc_val)
-    auc_pred_oof.append([auc_val_mean, auc_val_std])
-    print('Averaged AUC of validation: {}+{}'.format(auc_val_mean, auc_val_std))
-
-    # Predict test dataset several times at random
-    pred_test_num = 10
-    y_test = np.array([]) 
-    for i in range(pred_test_num):
-        if i == 0:
-            y_test_pred = model.predict(x_test, batch_size=1024, verbose=1)
-            y_test = np.expand_dims(y_test_pred, 2)
-        else:
-            y_test_pred = model.predict(x_test, batch_size=1024, verbose=1)
-            y_test_pred = np.expand_dims(y_test_pred, 2)
-            y_test = np.concatenate([y_test, y_test_pred], axis=2)
-    y_test = y_test.max(2)
-
-    # Asign results to dataframe (divide followed by sum)
-    pred_test[classes] += y_test / n_splits
-
-# AUC of cross-validation
-auc_pred_oof_fold = [auc_mean for auc_mean, auc_std in auc_pred_oof]
-auc_pred_oof_mean = np.mean(auc_pred_oof_mean)
-auc_pred_oof_std = np.std(auc_pred_oof_mean)
-
-# Save result of cross-validation
-pred_oof.to_csv('../output/{}_oof_{:.06f}_{:.06f}.csv'.format(saving_filename, auc_pred_oof_mean, auc_pred_oof_std), index=False)
-pred_test.to_csv('../output/{}_test.csv'.format(saving_filename), index=False)
-
-"""
+y_test = model.predict(x_test, batch_size=1024, verbose=1)
 sample_submission = pd.read_csv('../input/sample_submission.csv')
-test_fasttext1 = pd.read_csv('../output/test_fasttext_val0.9893_0.0037.csv')
-test_fasttext2 = pd.read_csv('../output/test_fasttext_val0.990713_0.003469.csv')
-sample_submission[classes] = (test_fasttext1[classes] + test_fasttext2[classes]) / 2
-sample_submission.to_csv('../output/avg_test_fasttext1_test_fasttext2.csv', index=False)
-# fasttext1: 0.9831
-# fasttext2: 0.9841
-# fasttext1+2: 0.9847
-"""
+sample_submission[classes] = y_test
 
+sample_submission.to_csv('../output/test_fasttext_val0.9893_0.0037.csv', index=False)

@@ -19,7 +19,7 @@ import logging
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers import Dense, Input, LSTM, GRU, Embedding, Dropout, Activation, Flatten
-from keras.layers import Bidirectional, GlobalMaxPool1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate
+from keras.layers import Bidirectional, GlobalMaxPool1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate, GlobalAveragePooling1D
 
 from keras.models import Model
 from keras import initializers, regularizers, constraints, optimizers, layers
@@ -333,8 +333,8 @@ def build_lstm_stack_model(logdir='attention'):
     # Attention before LSTM
     attention_mul1 = attention_3d_block(inp, name='inp')
 
-    l_lstm = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(attention_mul1)
-    l_dense = TimeDistributed(Dense(50))(l_lstm)
+    l_lstm = Bidirectional(GRU(50, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(attention_mul1)
+    l_dense = TimeDistributed(Dense(32))(l_lstm)
     #sentEncoder = Model(inputs=inp, outputs=l_dense)
 
     #l_lstm_sent = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(l_dense)
@@ -343,17 +343,17 @@ def build_lstm_stack_model(logdir='attention'):
     x_gap = GlobalAveragePooling1D()(l_dense)
     x = Concatenate()([x_gmp, x_gap])
 
-    x = Dense(256, activation="elu")(x)
+    x = Dense(64, activation="elu")(x)
     x = Dropout(0.5)(x)
     dense_per_class = []
     for i in classes:
-        x_dense = Dense(32, activation="elu")(x)
+        x_dense = Dense(16, activation="elu")(x)
         x_dense = Dropout(0.2)(x_dense)
         x_dense = Dense(1, activation="sigmoid")(x_dense)
         dense_per_class.append(x_dense)
     multitask_output = Concatenate(axis=1)(dense_per_class)
     model = Model(inputs=inp, outputs=multitask_output)
-    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-3, amsgrad=True), metrics=['accuracy'])
+    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-2, amsgrad=True), metrics=['accuracy'])
 
     return model
 
@@ -415,7 +415,10 @@ for train_index, val_index in kf.split(train):
     pred_oof.loc[val_index, classes] = y_val_pred
     # Evaluate validation results
     auc_val = roc_auc_score(y_val, y_val_pred, average=None, sample_weight=None)
-    print('Averaged AUC of validation: {}+{}'.format(np.mean(auc_val), np.std(auc_val)))
+    auc_val_mean = np.mean(auc_val)
+    auc_val_std = np.std(auc_val)
+    auc_pred_oof.append([auc_val_mean, auc_val_std])
+    print('Averaged AUC of validation: {}+{}'.format(auc_val_mean, auc_val_std))
 
     # Predict test dataset several times at random
     pred_test_num = 10
@@ -433,9 +436,13 @@ for train_index, val_index in kf.split(train):
     # Asign results to dataframe (divide followed by sum)
     pred_test[classes] += y_test / n_splits
 
+# AUC of cross-validation
+auc_pred_oof_fold = [auc_mean for auc_mean, auc_std in auc_pred_oof]
+auc_pred_oof_mean = np.mean(auc_pred_oof_mean)
+auc_pred_oof_std = np.std(auc_pred_oof_mean)
 
 # Save result of cross-validation
-pred_oof.to_csv('../output/{}_oof.csv'.format(saving_filename), index=False)
+pred_oof.to_csv('../output/{}_oof_{:.06f}_{:.06f}.csv'.format(saving_filename, auc_pred_oof_mean, auc_pred_oof_std), index=False)
 pred_test.to_csv('../output/{}_test.csv'.format(saving_filename), index=False)
 
 """
