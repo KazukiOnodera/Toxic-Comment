@@ -408,27 +408,28 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     #validation_generator = data_generator_for_test(x_val, 1024)
     y_val = y_val.values
 
-    # Build model
-    print('Building model')
-    model = build_lstm_stack_model()
+    if fold_idx != 0:
+        # Build model
+        print('Building model')
+        model = build_lstm_stack_model()
 
-    # Parameters
-    batch_size = 256
-    training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
-    training_generator = data_generator(x_train, batch_size)
+        # Parameters
+        batch_size = 256
+        training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
+        training_generator = data_generator(x_train, batch_size)
 
-    # Callbacks
-    ival = IntervalEvaluation(validation_data=(x_val, y_val), interval=1)
+        # Callbacks
+        ival = IntervalEvaluation(validation_data=(x_val, y_val), interval=1)
 
-    # Training
-    print('Training model')
-    callback_history = model.fit_generator(
-                            training_generator,
-                            steps_per_epoch=training_steps_per_epoch,
-                            epochs=10,
-                            validation_data=(x_val, y_val),
-                            callbacks=[ival]
-                            )
+        # Training
+        print('Training model')
+        callback_history = model.fit_generator(
+                                training_generator,
+                                steps_per_epoch=training_steps_per_epoch,
+                                epochs=10,
+                                validation_data=(x_val, y_val),
+                                callbacks=[ival]
+                                )
 
     # Predict at validation dataset
     y_val_pred = model.predict(x_val, batch_size=1024, verbose=1)
@@ -445,10 +446,10 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     print('Testing')
     testing_batch_size = 1024
     testing_steps = math.ceil(len(test) / testing_batch_size)
-    testing_generator = data_generator_for_test(test, testing_batch_size)
     pred_test_num = 10
     y_test = np.array([])
     for i in range(pred_test_num):
+        testing_generator = data_generator_for_test(test, testing_batch_size)
         if i == 0:
             y_test_pred = model.predict_generator(testing_generator, steps=testing_steps, verbose=1)
             assert len(y_test_pred) == len(test)
