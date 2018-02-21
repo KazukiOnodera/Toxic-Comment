@@ -376,7 +376,7 @@ def build_lstm_stack_model(logdir='attention'):
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'test_fasttext6_cv'
+saving_filename = 'test_fasttext2_cv'
 
 # Define KFold and random state
 random_state = 407

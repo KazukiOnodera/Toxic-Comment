@@ -223,6 +223,36 @@ def data_generator(df, batch_size):
                 batch_y = None
                 batch_i = 0
 
+def data_generator_for_test(df, batch_size):
+    """
+    Given a raw dataframe, generates infinite batches of FastText vectors.
+    """
+    df_length = len(df)
+    batch_i = 0 # Counter inside the current batch vector
+    all_data_i = 0
+    batch_x = None # The current batch's x data
+
+    for i, row in df.iterrows():
+        comment = row['comment_text']
+
+        if batch_x is None:
+            batch_x = np.zeros((batch_size, window_length, n_features), dtype='float32')
+
+        batch_x[batch_i] = text_to_vector(comment)
+        batch_i += 1
+        all_data_i += 1
+
+        if batch_i == batch_size:
+            # Ready to yield the batch
+            yield batch_x
+            batch_x = None
+            batch_i = 0
+        elif all_data_i == df_length:
+            # Ready to yield the last batch
+            yield batch_x[:batch_i]
+            batch_x = None
+            batch_i = 0
+
 
 """
 Data loading
@@ -362,7 +392,7 @@ def build_lstm_stack_model(logdir='attention'):
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'test_fasttext2_cv'
+saving_filename = 'test_fasttext6_cv'
 
 # Define KFold and random state
 random_state = 407
@@ -411,7 +441,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     callback_history = model.fit_generator(
                             training_generator,
                             steps_per_epoch=training_steps_per_epoch,
-                            epochs=10,
+                            epochs=20,
                             validation_data=(x_val, y_val),
                             callbacks=[ival]
                             )
@@ -428,15 +458,19 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     print('Averaged AUC of validation: {}+{}'.format(auc_val_mean, auc_val_std))
 
     # Predict test dataset several times at random
-    testing_generator = data_generator_for_test(test, 1024)
+    print('Testing')
+    testing_batch_size = 1024
+    testing_steps = math.ceil(len(test) / testing_batch_size)
     pred_test_num = 10
     y_test = np.array([])
     for i in range(pred_test_num):
+        testing_generator = data_generator_for_test(test, testing_batch_size)
         if i == 0:
-            y_test_pred = model.predict_generator(testing_generator)
+            y_test_pred = model.predict_generator(testing_generator, steps=testing_steps, verbose=1)
+            assert len(y_test_pred) == len(test)
             y_test = np.expand_dims(y_test_pred, 2)
         else:
-            y_test_pred = model.predict_generator(testing_generator)
+            y_test_pred = model.predict_generator(testing_generator, steps=testing_steps, verbose=1)
             y_test_pred = np.expand_dims(y_test_pred, 2)
             y_test = np.concatenate([y_test, y_test_pred], axis=2)
     y_test = y_test.max(2)
@@ -445,13 +479,13 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     pred_test[classes] += y_test / n_splits
 
     # Save model every fold
-    from keras.models import load_model
-    model.save('../model/model_{}_{}.h5'.format(saving_filename, fold_idx))  # creates a HDF5 file 'my_model.h5'
+    #from keras.models import load_model
+    #model.save('../model/model_{}_{}.h5'.format(saving_filename, fold_idx))  # creates a HDF5 file 'my_model.h5'
 
 # AUC of cross-validation
 auc_pred_oof_fold = [auc_mean for auc_mean, auc_std in auc_pred_oof]
-auc_pred_oof_mean = np.mean(auc_pred_oof_mean)
-auc_pred_oof_std = np.std(auc_pred_oof_mean)
+auc_pred_oof_mean = np.mean(auc_pred_oof_fold)
+auc_pred_oof_std = np.std(auc_pred_oof_fold)
 
 # Save result of cross-validation
 pred_oof.to_csv('../output/{}_oof_{:.06f}_{:.06f}.csv'.format(saving_filename, auc_pred_oof_mean, auc_pred_oof_std), index=False)
@@ -465,4 +499,11 @@ sample_submission.to_csv('../output/avg_test_fasttext1_test_fasttext2.csv', inde
 # fasttext1: 0.9831
 # fasttext2: 0.9841
 # fasttext1+2: 0.9847
+# fasttext2_cv: 0.9853
+
+sample_submission = pd.read_csv('../input/sample_submission.csv')
+avg_test_fasttext1_test_fasttext2_test_fasttext5 = pd.read_csv('../output/avg_test_fasttext1_test_fasttext2_test_fasttext5.csv')
+fasttext2_cv = pd.read_csv('../output/test_fasttext2_cv_test.csv')
+sample_submission[classes] = (avg_test_fasttext1_test_fasttext2_test_fasttext5[classes] + fasttext2_cv[classes]) / 2
+sample_submission.to_csv('../output/fasttext2_cv_avg9857.csv', index=False)
 """
