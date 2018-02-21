@@ -408,28 +408,27 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     #validation_generator = data_generator_for_test(x_val, 1024)
     y_val = y_val.values
 
-    if fold_idx != 0:
-        # Build model
-        print('Building model')
-        model = build_lstm_stack_model()
+    # Build model
+    print('Building model')
+    model = build_lstm_stack_model()
 
-        # Parameters
-        batch_size = 256
-        training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
-        training_generator = data_generator(x_train, batch_size)
+    # Parameters
+    batch_size = 256
+    training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
+    training_generator = data_generator(x_train, batch_size)
 
-        # Callbacks
-        ival = IntervalEvaluation(validation_data=(x_val, y_val), interval=1)
+    # Callbacks
+    ival = IntervalEvaluation(validation_data=(x_val, y_val), interval=1)
 
-        # Training
-        print('Training model')
-        callback_history = model.fit_generator(
-                                training_generator,
-                                steps_per_epoch=training_steps_per_epoch,
-                                epochs=10,
-                                validation_data=(x_val, y_val),
-                                callbacks=[ival]
-                                )
+    # Training
+    print('Training model')
+    callback_history = model.fit_generator(
+                            training_generator,
+                            steps_per_epoch=training_steps_per_epoch,
+                            epochs=10,
+                            validation_data=(x_val, y_val),
+                            callbacks=[ival]
+                            )
 
     # Predict at validation dataset
     y_val_pred = model.predict(x_val, batch_size=1024, verbose=1)
