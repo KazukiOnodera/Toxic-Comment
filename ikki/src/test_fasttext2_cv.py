@@ -227,27 +227,29 @@ def data_generator_for_test(df, batch_size):
     """
     df_length = len(df)
     batch_i = 0 # Counter inside the current batch vector
+    all_data_i = 0
     batch_x = None # The current batch's x data
-    batch_y = None # The current batch's y data
 
     for i, row in df.iterrows():
         comment = row['comment_text']
 
         if batch_x is None:
             batch_x = np.zeros((batch_size, window_length, n_features), dtype='float32')
-            batch_y = np.zeros((batch_size, len(classes)), dtype='float32')
 
         batch_x[batch_i] = text_to_vector(comment)
-        batch_y[batch_i] = row[classes].values
         batch_i += 1
+        all_data_i += 1
 
-        if batch_i == batch_size or i + 1 == df_length:
+        if batch_i == batch_size:
             # Ready to yield the batch
-            yield batch_x, batch_y
+            yield batch_x
             batch_x = None
-            batch_y = None
             batch_i = 0
-
+        elif all_data_i == df_length:
+            # Ready to yield the last batch
+            yield batch_x[:batch_i]
+            batch_x = None
+            batch_i = 0
 """
 Data loading
 """
@@ -440,15 +442,19 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     print('Averaged AUC of validation: {}+{}'.format(auc_val_mean, auc_val_std))
 
     # Predict test dataset several times at random
-    testing_generator = data_generator_for_test(test, 1024)
+    print('Testing')
+    testing_batch_size = 1024
+    testing_steps = math.ceil(len(test) / testing_batch_size)
+    testing_generator = data_generator_for_test(test, testing_batch_size)
     pred_test_num = 10
     y_test = np.array([])
     for i in range(pred_test_num):
         if i == 0:
-            y_test_pred = model.predict_generator(testing_generator)
+            y_test_pred = model.predict_generator(testing_generator, steps=testing_steps, verbose=1)
+            assert len(y_test_pred) == len(test)
             y_test = np.expand_dims(y_test_pred, 2)
         else:
-            y_test_pred = model.predict_generator(testing_generator)
+            y_test_pred = model.predict_generator(testing_generator, steps=testing_steps, verbose=1)
             y_test_pred = np.expand_dims(y_test_pred, 2)
             y_test = np.concatenate([y_test, y_test_pred], axis=2)
     y_test = y_test.max(2)
@@ -457,13 +463,13 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     pred_test[classes] += y_test / n_splits
 
     # Save model every fold
-    from keras.models import load_model
-    model.save('../model/model_{}_{}.h5'.format(saving_filename, fold_idx))  # creates a HDF5 file 'my_model.h5'
+    #from keras.models import load_model
+    #model.save('../model/model_{}_{}.h5'.format(saving_filename, fold_idx))  # creates a HDF5 file 'my_model.h5'
 
 # AUC of cross-validation
 auc_pred_oof_fold = [auc_mean for auc_mean, auc_std in auc_pred_oof]
-auc_pred_oof_mean = np.mean(auc_pred_oof_mean)
-auc_pred_oof_std = np.std(auc_pred_oof_mean)
+auc_pred_oof_mean = np.mean(auc_pred_oof_fold)
+auc_pred_oof_std = np.std(auc_pred_oof_fold)
 
 # Save result of cross-validation
 pred_oof.to_csv('../output/{}_oof_{:.06f}_{:.06f}.csv'.format(saving_filename, auc_pred_oof_mean, auc_pred_oof_std), index=False)
