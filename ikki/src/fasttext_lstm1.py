@@ -1,4 +1,6 @@
 """
+特徴量作成?
+
 参考
 https://www.kaggle.com/mschumacher/using-fasttext-models-for-robust-embeddings/notebook
 
@@ -22,7 +24,7 @@ import logging
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers import Dense, Input, LSTM, GRU, Embedding, Dropout, Activation, Flatten
-from keras.layers import Bidirectional, GlobalMaxPool1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate
+from keras.layers import Bidirectional, GlobalMaxPool1D, GlobalAveragePooling1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate
 
 from keras.models import Model
 from keras import initializers, regularizers, constraints, optimizers, layers
@@ -160,7 +162,9 @@ def normalize(s):
     s = re.sub(r'([\;\:\|•«\n=:;",.\/—\-\(\)~\[\]\_\#])', ' ', s)
     # Remove special word
     s = re.sub(r'([☺☻♥♦♣♠•◘○♂♀♪♫☼►◄])', ' ', s)
-
+    # Remove repeated (consecutive) words
+    #TODO: 繋がっている単語はわけられない　'fuck fuck'=>'fuck', 'FUCKFUCK'=>'FUCKFUCK'
+    s = re.sub(r'\b(\w+)( \1\b)+', r'\1', s)
     # Remove new lines
     # Replace numbers and symbols with language
     s = s.replace('&', ' and ')
@@ -212,6 +216,8 @@ def text_to_vector(text):
     #TODO: remove stop words(https://www.kaggle.com/saxinou/nlp-01-preprocessing-data)
     # *を含む単語を置換する
     words = [ast_word2word.get(word) if ast_word2word.get(word) is not None else word for word in words]
+    # 繰り視される単語をゆにーくにする
+    words = [re.sub(r'([a-z]+)\1+', r'\1', word) if len(word) > 100 else word for word in words]
     # 置換後は*を取り除く?
     #words = [word.replace('*', '') for word in words]
     words_num = len(words)
@@ -402,16 +408,17 @@ def build_attention_model():
 def build_lstm_stack_model(logdir='attention'):
     # Bidirectional-LSTM
     inp = Input(shape=(window_length, 300))
-    l_lstm = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(inp)
-    l_dense = TimeDistributed(Dense(50))(l_lstm)
-    sentEncoder = Model(inputs=inp, outputs=l_dense)
+    l_lstm = Bidirectional(GRU(150, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(inp)
+    l_dense = TimeDistributed(Dense(75, activation="elu"))(l_lstm)
 
-    l_lstm_sent = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(l_dense)
-    l_dense_sent = TimeDistributed(Dense(50))(l_lstm_sent)
+    #l_lstm_sent = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(l_dense)
+    #l_dense_sent = TimeDistributed(Dense(50))(l_lstm_sent)
 
-    x = GlobalMaxPool1D()(l_dense_sent)
-    x = Dense(256, activation="elu")(x)
-    x = Dropout(0.5)(x)
+    x = GlobalMaxPool1D()(l_dense)
+    x = Dense(128, activation="elu")(x)
+    x = Dropout(0.3)(x)
+    x = Dense(128, activation="elu")(x)
+    x = Dropout(0.3)(x)
     x = Dense(6, activation="sigmoid")(x)
     model = Model(inputs=inp, outputs=x)
     model.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-3, amsgrad=True), metrics=['accuracy'])
@@ -423,10 +430,10 @@ def build_lstm_stack_model(logdir='attention'):
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'fasttext_correct_toxic_cv'
+saving_filename = 'fasttext_lstm1_cv'
 
 # Define KFold and random state
-random_state = 407
+random_state = 333
 n_splits = 5
 kf = KFold(n_splits=n_splits, random_state=random_state)
 
@@ -448,19 +455,20 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     # Train/validation dataset
     x_train, x_val = train.iloc[train_index], train.iloc[val_index]
     y_train, y_val = train[classes].iloc[train_index], train[classes].iloc[val_index]
-
+    y_val = y_val.values
     # Convert validation set to fixed array
     print('Converting validation dataframe to array')
-    x_val = df_to_data(x_val)
+    #x_val = df_to_data(x_val)
     #validation_generator = data_generator_for_test(x_val, 1024)
-    y_val = y_val.values
+    #y_val = y_val.values
 
     # Build model
     print('Building model')
     model = build_lstm_stack_model()
 
     # Parameters
-    batch_size = 256
+    training_epochs = 5
+    batch_size = 128
     training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
     training_generator = data_generator(x_train, batch_size)
 
@@ -469,24 +477,52 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
 
     # Training
     print('Training model')
-    callback_history = model.fit_generator(
-                            training_generator,
-                            steps_per_epoch=training_steps_per_epoch,
-                            epochs=13,
-                            validation_data=(x_val, y_val),
-                            callbacks=[ival]
-                            )
+    for epoch in range(training_epochs):
+        callback_history = model.fit_generator(
+                                training_generator,
+                                steps_per_epoch=training_steps_per_epoch,
+                                epochs=1,
+                                )
+
+        # Predict at validation dataset
+        print('Validating')
+        validation_batch_size = 1024
+        validation_steps = math.ceil(len(x_val) / validation_batch_size)
+        validation_generator = data_generator_for_test(x_val, validation_batch_size)
+        y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+        score = roc_auc_score(y_val, y_val_pred, average=None, sample_weight=None)
+        score_mean, score_std = np.mean(score), np.std(score)
+        print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch + 1, score_mean, score_std))
+
 
     # Predict at validation dataset
-    y_val_pred = model.predict(x_val, batch_size=1024, verbose=1)
+    print('Validating')
+    validation_batch_size = 1024
+    validation_steps = math.ceil(len(x_val) / validation_batch_size)
+    pred_val_num = 10
+    y_val_preds = np.array([])
+    for i in range(pred_val_num):
+        validation_generator = data_generator_for_test(x_val, validation_batch_size)
+        if i == 0:
+            y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+            assert len(y_val_pred) == len(x_val)
+            y_val_preds = np.expand_dims(y_val_pred, 2)
+        else:
+            y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+            y_val_pred = np.expand_dims(y_val_pred, 2)
+            y_val_preds = np.concatenate([y_val_preds, y_val_pred], axis=2)
+    y_val_preds_max = y_val_preds.max(2)
+
     # Asign results to dataframe
-    pred_oof.loc[val_index, classes] = y_val_pred
+    pred_oof.loc[val_index, classes] = y_val_preds_max
+
     # Evaluate validation results
-    auc_val = roc_auc_score(y_val, y_val_pred, average=None, sample_weight=None)
+    auc_val = roc_auc_score(y_val, y_val_preds_max, average=None, sample_weight=None)
     auc_val_mean = np.mean(auc_val)
     auc_val_std = np.std(auc_val)
     auc_pred_oof.append([auc_val_mean, auc_val_std])
     print('Averaged AUC of validation: {}+{}'.format(auc_val_mean, auc_val_std))
+
 
     # Predict test dataset several times at random
     print('Testing')
@@ -532,20 +568,4 @@ sample_submission.to_csv('../output/avg_test_fasttext1_test_fasttext2.csv', inde
 # fasttext1: 0.9831
 # fasttext2: 0.9841
 # fasttext1+2: 0.9847
-
-
-sample_submission = pd.read_csv('../input/sample_submission.csv')
-avg_test_fasttext1_test_fasttext2_test_fasttext5 = pd.read_csv('../output/avg_test_fasttext1_test_fasttext2_test_fasttext5.csv')
-fasttext2_cv = pd.read_csv('../output/test_fasttext2_cv_test.csv')
-fasttext_correct_toxic_cv = pd.read_csv('../output/fasttext_correct_toxic_cv_test.csv')
-sample_submission[classes] = (avg_test_fasttext1_test_fasttext2_test_fasttext5[classes] + fasttext2_cv[classes] + fasttext_correct_toxic_cv[classes]) / 3
-sample_submission.to_csv('../output/fasttext2_cv_avg9857_fasttext_correct_toxic_cv.csv', index=False)
-# fasttext2_cv_avg9857: 0.9860
-# fasttext2_cv_avg9857_fasttext_correct_toxic_cv: 0.9862
-
-sample_submission = pd.read_csv('../input/sample_submission.csv')
-fasttext2_cv = pd.read_csv('../output/test_fasttext2_cv_test.csv')
-fasttext_correct_toxic_cv = pd.read_csv('../output/fasttext_correct_toxic_cv_test.csv')
-sample_submission[classes] = (fasttext2_cv[classes] + fasttext_correct_toxic_cv[classes]) / 2
-sample_submission.to_csv('../output/fasttext2_cv_fasttext_correct_toxic_cv.csv', index=False)
 """

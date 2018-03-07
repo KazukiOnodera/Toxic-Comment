@@ -484,4 +484,12 @@ sample_submission.to_csv('../output/avg_test_fasttext1_test_fasttext2.csv', inde
 # fasttext1: 0.9831
 # fasttext2: 0.9841
 # fasttext1+2: 0.9847
+# fasttext2_cv: 0.9853
+
+sample_submission = pd.read_csv('../input/sample_submission.csv')
+avg_test_fasttext1_test_fasttext2_test_fasttext5 = pd.read_csv('../output/avg_test_fasttext1_test_fasttext2_test_fasttext5.csv')
+fasttext2_cv = pd.read_csv('../output/test_fasttext2_cv_test.csv')
+sample_submission[classes] = (avg_test_fasttext1_test_fasttext2_test_fasttext5[classes] + fasttext2_cv[classes]) / 2
+sample_submission.to_csv('../output/fasttext2_cv_avg9857.csv', index=False)
+# fasttext2_cv_avg9857: 0.9860
 """
