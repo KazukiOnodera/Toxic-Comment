@@ -1,4 +1,6 @@
 """
+特徴量作成?
+
 参考
 https://www.kaggle.com/mschumacher/using-fasttext-models-for-robust-embeddings/notebook
 
@@ -10,6 +12,9 @@ TODO: module化する
 import os
 import re
 import math
+import csv
+import itertools
+from collections import Counter
 import numpy as np
 import pandas as pd
 from fastText import load_model
@@ -19,11 +24,12 @@ import logging
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers import Dense, Input, LSTM, GRU, Embedding, Dropout, Activation, Flatten
-from keras.layers import Bidirectional, GlobalMaxPool1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate, GlobalAveragePooling1D
+from keras.layers import Bidirectional, GlobalMaxPool1D, GlobalAveragePooling1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate, SpatialDropout1D
+from keras.layers import CuDNNGRU, CuDNNLSTM, Conv1D
 
 from keras.models import Model
 from keras import initializers, regularizers, constraints, optimizers, layers
-from keras.optimizers import SGD, RMSprop, Adam
+from keras.optimizers import SGD, RMSprop, Adam, Adamax
 from keras.callbacks import Callback, EarlyStopping, TensorBoard, ModelCheckpoint
 from keras import backend as K
 from keras.engine.topology import Layer
@@ -33,7 +39,18 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold
 
 
-window_length = 250 # The amount of words we look at per example. Experiment with this.
+window_length = 100 # The amount of words we look at per example. Experiment with this.
+
+"""
+Data loading
+"""
+print("Loading train/test data")
+train = pd.read_csv('../input/train.csv')
+test = pd.read_csv('../input/test.csv')
+
+# target classes
+classes = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+
 
 """
 Preprocessing functions
@@ -42,6 +59,24 @@ Preprocessing functions
 def remove_accent_before_tokens(sentences):
     res = unidecode.unidecode(sentences)
     return(res)
+
+# Frequent Emphasized word
+
+
+# Replace toxic words
+def make_asterisk_toxic_word(toxic_word):
+    split_word = list(toxic_word)
+    product_set = [[split_char, '*'] if split_char != ' ' else [split_char] for split_char in split_word]
+    asterisk_word = list(itertools.product(*product_set))
+    asterisk_word_list = list(map(lambda x: ''.join(x), asterisk_word))
+    # remove original word
+    asterisk_word_list.remove(toxic_word)
+    # remove all asterisk word
+    asterisk_word_list = [word for word in asterisk_word_list if len(Counter(''.join(word.split())).values()) != 1]
+    return asterisk_word_list
+
+swear_words = list(csv.reader(open('../external_data/swearWords.csv', 'r')))[0]
+ast_word2word = {ast_word: word for word in swear_words for ast_word in make_asterisk_toxic_word(word)}
 
 # Expanding contraction
 CONTRACTION_MAP = {"ain't": "is not", "aren't": "are not","can't": "cannot",
@@ -108,8 +143,86 @@ def normalize(s):
     s = s.lower()
     # Special preprocessing
     s = s.replace('ı', 'i')
+    s = s.replace('sh1t', 'shit')
+    s = s.replace('f uck', 'fuck')
+    s = s.replace('f u c k', 'fuck')
+    s = s.replace('blow job', 'blowjob')
+    # s = s.replace('\*uc\*', 'fuck')
+    s = s.replace('God damn', 'goddamn')
+    s = s.replace('knob end', 'knobend')
+
     # Expand contractions
     s = expand_contractions(s, CONTRACTION_MAP)
+
+    # Remove links
+    s = re.sub("(f|ht)tp(s?)://\\S+", "LINK", s)
+    s = re.sub("http\\S+", "LINK", s)
+    s = re.sub("xml\\S+", "LINK", s)
+
+    # Remove modified text: f u c k  y o u => fuck you
+    s = re.sub("(?<=\\b\\w)\\s(?=\\w\\b)", "", s)
+    # Remeve shit text
+    # s = re.sub("\\b(a|e)w+\\b", "AWWWW", s)
+    # s = re.sub("\\b(y)a+\\b", "YAAAA", s)
+    # s = re.sub("\\b(w)w+\\b", "WWWWW", s)
+
+    # s = re.sub("\\b(b+)?((h+)((a|e|i|o|u)+)(h+)?){2,}\\b", "HAHEHI", s)
+    # s = re.sub("\\b(b+)?(((a|e|i|o|u)+)(h+)((a|e|i|o|u)+)?){2,}\\b", "HAHEHI", s)
+    # s = re.sub("\\b(m+)?(u+)?(b+)?(w+)?((a+)|(h+))+\\b", "HAHEHI", s)
+    # s = re.sub("\\b((e+)(h+))+\\b", "HAHEHI", s)
+    # s = re.sub("\\b((h+)(e+))+\\b", "HAHEHI", s)
+    # s = re.sub("\\b((o+)(h+))+\\b", "HAHEHI", s)
+    # s = re.sub("\\b((h+)(o+))+\\b", "HAHEHI", s)
+    # s = re.sub("\\b((l+)(a+))+\\b", "LALALA", s)
+    # s = re.sub("(w+)(o+)(h+)(o+)", "WOHOO", s)
+    # s = re.sub("\\b(d?(u+)(n+)?(h+))\\b", "UUUHHH", s)
+    # s = re.sub("\\b(a+)(r+)(g+)(h+)\\b", "ARGH", s)
+    # s = re.sub("\\b(a+)(w+)(h+)\\b", "AAAWWHH", s)
+    # s = re.sub("\\b(p+)(s+)(h+)\\b", "SHHHHH", s)
+    # s = re.sub("\\b((s+)(e+)?(h+))+\\b", "SHHHHH", s)
+    # s = re.sub("\\b(s+)(o+)\\b", "", s)
+    # s = re.sub("\\b(h+)(m+)\\b", "HHMM", s)
+    # s = re.sub("\\b((b+)(l+)(a+)(h+)?)+\\b", "BLABLA", s)
+    # s = re.sub("\\b((y+)(e+)(a+)(h+)?)+\\b", "YEAH", s)
+    # s = re.sub("\\b((z+)?(o+)(m+)(f+)?(g+))+\\b", "OMG", s)
+    # s = re.sub("aa(a+)", "a", s)
+    # s = re.sub("ee(e+)", "e", s)
+    # s = re.sub("i(i+)", "i", s)
+    # s = re.sub("oo(o+)", "o", s)
+    # s = re.sub("uu(u+)", "u", s)
+    # s = re.sub("\\b(u(u+))\\b", "u", s)
+    # s = re.sub("y(y+)", "y", s)
+    # s = re.sub("hh(h+)", "h", s)
+    # s = re.sub("gg(g+)", "g", s)
+    # s = re.sub("tt(t+)\\b", "t", s)
+    # s = re.sub("(tt(t+))", "tt", s)
+    # s = re.sub("mm(m+)", "m", s)
+    # s = re.sub("ff(f+)", "f", s)
+    # s = re.sub("cc(c+)", "c", s)
+    # s = re.sub("\\b(kkk)\\b", "KKK", s)
+    # s = re.sub("\\b(pkk)\\b", "PKK", s)
+    # s = re.sub("kk(k+)", "kk", s)
+    # s = re.sub("fukk", "fuck", s)
+    # s = re.sub("k(k+)\\b", "k", s)
+    # s = re.sub("f+u+c+k+\\b", "fuck", s)
+    # s = re.sub("((a+)|(h+)){3,}", "HAHEHI", s)
+
+    # Remove modified text: f u c k  y o u => fuck you
+    s = re.sub("(?<=\\b\\w)\\s(?=\\w\\b)", "", s)
+
+    s = re.sub("((lol)(o?))+\\b", "LOL", s)
+    s = re.sub("n ig ger", "nigger", s)
+    s = re.sub("nig ger", "nigger", s)
+    s = re.sub("s hit", "shit", s)
+    s = re.sub("g ay", "gay", s)
+    s = re.sub("f ag got", "faggot", s)
+    s = re.sub("c ock", "cock", s)
+    s = re.sub("cu nt", "cunt", s)
+    s = re.sub("idi ot", "idiot", s)
+    # s = re.sub("(?<=\\b(fu|su|di|co|li))\\s(?=(ck)\\b)", "", s)
+    # #gsub("(?<=\\w(ck))\\s(?=(ing)\\b)", "", "fuck ing suck ing lick ing", perl = T)
+    # s = re.sub("(?<=\\w(ck))\\s(?=(ing)\\b)", "", s)
+
     # Remove accent marks
     #s = remove_accent_before_tokens(s)
     # Replace ips
@@ -120,6 +233,9 @@ def normalize(s):
     s = re.sub(r'([\;\:\|•«\n=:;",.\/—\-\(\)~\[\]\_\#])', ' ', s)
     # Remove special word
     s = re.sub(r'([☺☻♥♦♣♠•◘○♂♀♪♫☼►◄])', ' ', s)
+    # Remove repeated (consecutive) words
+    #TODO: 繋がっている単語はわけられない　'fuck fuck'=>'fuck', 'FUCKFUCK'=>'FUCKFUCK'
+    s = re.sub(r'\b(\w+)( \1\b)+', r'\1', s)
     # Remove new lines
     # Replace numbers and symbols with language
     s = s.replace('&', ' and ')
@@ -153,8 +269,8 @@ class IntervalEvaluation(Callback):
             score = roc_auc_score(self.y_val, y_pred, average=None, sample_weight=None)
             score_mean, score_std = np.mean(score), np.std(score)
             self.score_hitory.append([score_mean, score_std])
-            logging.info("interval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch+1, score_mean, score_std))
-            print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch+1, score_mean, score_std))
+            logging.info("interval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch, score_mean, score_std))
+            print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch, score_mean, score_std))
 
 """
 Function to generate training data
@@ -166,9 +282,15 @@ def text_to_vector(text):
     ---
     window_lengthよりも大きい文章のときスタート位置をランダムにする機能追加
     """
-    text = normalize(text)
+    #text = normalize(text)
     words = text.split()
     #TODO: remove stop words(https://www.kaggle.com/saxinou/nlp-01-preprocessing-data)
+    # *を含む単語を置換する
+    words = [ast_word2word.get(word) if ast_word2word.get(word) is not None else word for word in words]
+    # 繰り視される単語をゆにーくにする
+    words = [re.sub(r'([a-z]+)\1+', r'\1', word) if len(word) > 100 else word for word in words]
+    # 置換後は*を取り除く?
+    #words = [word.replace('*', '') for word in words]
     words_num = len(words)
     if words_num <= window_length:
         window = words
@@ -253,17 +375,6 @@ def data_generator_for_test(df, batch_size):
             batch_x = None
             batch_i = 0
 
-
-"""
-Data loading
-"""
-print("Loading train/test data")
-train = pd.read_csv('../input/train.csv')
-test = pd.read_csv('../input/test.csv')
-
-# target classes
-classes = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
-
 """
 Preprocessings
 """
@@ -275,6 +386,15 @@ Preprocessings
 train['comment_text'] = train['comment_text'].str.replace('ı', 'i')
 test['comment_text'] = test['comment_text'].str.replace('ı', 'i')
 
+# 両端に*がある単語を取得
+# 存在するものは除く
+tmp = pd.concat([train, test]).comment_text.apply(normalize)
+tmp2 = tmp.str.split().apply(lambda x: [w for w in x if (w[0] == w[-1] == '*') or (len(w) >= 5 and w[0] == w[1] == w[-2] == w[-1] == '*')])
+tmp3 = tmp2[tmp2.apply(len)!=0]
+ast_between_word = pd.Series(np.concatenate(tmp3.tolist())).value_counts()
+delete_key_words = [word for word in ast_between_word.index if ast_word2word.get(word) is not None]
+for del_key in delete_key_words:
+    del ast_word2word[del_key]
 
 # Normalize comment_text (IMPLEMENTED IN GENERATOR)
 #train['comment_text'] = train['comment_text'].apply(normalize)
@@ -296,106 +416,65 @@ n_features = ft_model.get_dimension()
 """
 Define models
 """
-def build_model(logdir='.'):
-    # Bidirectional-LSTM
-    if logdir is not None and os.path.exists(logdir):
-        tb_cb = TensorBoard(log_dir='.', histogram_freq=0, write_graph=True)
-
-    inp = Input(shape=(window_length, 300))
-    x = Bidirectional(LSTM(50, return_sequences=True, dropout=0.1, recurrent_dropout=0.1))(inp)
-    x = GlobalMaxPool1D()(x)
-    x = Dense(50, activation="relu")(x)
-    x = Dropout(0.1)(x)
-    x = Dense(6, activation="sigmoid")(x)
-    model = Model(inputs=inp, outputs=x)
-    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-
-    return model
-
-def attention_3d_block(inputs, name, single_attention_vector=False):
-    # inputs.shape = (batch_size, time_steps, input_dim)
-    input_dim = int(inputs.shape[2])
-    a = Permute((2, 1))(inputs)
-    a = Reshape((input_dim, window_length))(a) # this line is not useful. It's just to know which dimension is what.
-    a = Dense(window_length, activation='softmax')(a)
-    if single_attention_vector:
-        a = Lambda(lambda x: K.mean(x, axis=1), name='dim_reduction'+name)(a)
-        a = RepeatVector(input_dim)(a)
-    a_probs = Permute((2, 1), name='attention_vec'+name)(a)
-    output_attention_mul = Multiply(name='mul'+name)([inputs, a_probs])
-    return output_attention_mul
-
-def build_attention_model():
-    # Bidirectional-GRU with Attention
-    inp = Input(shape=(window_length, 300))
-
-    # Attention before LSTM
-    #attention_mul1 = attention_3d_block(inp, name='inp')
-
-    l_lstm1 = Bidirectional(GRU(100, return_sequences=True, dropout=0.15, recurrent_dropout=0.15))(inp)
-
-    # Attention after LSTM
-    attention_mul1 = attention_3d_block(l_lstm1, name='l_lstm1')
-
-    #l_lstm2 = Bidirectional(GRU(50, return_sequences=True, dropout=0.15, recurrent_dropout=0.15))(attention_mul1)
-    #attention_mul2 = attention_3d_block(l_lstm2, name='l_lstm2')
-
-    # Flatten attention vectors
-    attention_mul1 = Flatten()(attention_mul1)
-
-    inp_feat = Input(shape=(n_engineered_features,))
-    concat_feat = Concatenate()([attention_mul1, inp_feat])
-    x = Dropout(0.1)(concat_feat)
-    #x = Dense(216, activation="elu")(x)
-    #x = Dropout(0.4)(x)
-    x = Dense(512, activation="elu")(x)
-    x = Dropout(0.3)(x)
-    x = Dense(6, activation="sigmoid")(x)
-    model = Model(inputs=[inp, inp_feat], outputs=x)
-    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-3, amsgrad=True), metrics=['accuracy'])
-
-    return model
 
 def build_lstm_stack_model(logdir='attention'):
     # Bidirectional-LSTM
     inp = Input(shape=(window_length, 300))
+    inp_dr = SpatialDropout1D(0.05)(inp)
+    l_lstm = Bidirectional(CuDNNGRU(256, return_sequences=True))(inp_dr)
+    l_lstm = Dropout(0.1)(l_lstm)
+    l_conv2 = Conv1D(128, kernel_size = 2, padding = "valid", activation='elu', kernel_initializer = "he_uniform")(l_lstm)
+    l_conv3 = Conv1D(128, kernel_size = 3, padding = "valid", activation='elu', kernel_initializer = "he_uniform")(l_lstm)
+    #l_conv4 = Conv1D(128, kernel_size = 4, padding = "valid", kernel_initializer = "he_uniform")(l_lstm)
+    #l_conv5 = Conv1D(128, kernel_size = 5, padding = "valid", kernel_initializer = "he_uniform")(l_lstm)
+    #l_dense = TimeDistributed(Dense(50, activation="relu"))(l_lstm)
+    l_conv = Concatenate(axis=1)([l_conv2, l_conv3])
+    x_gmp = GlobalMaxPool1D()(l_conv)
+    x_gap = GlobalAveragePooling1D()(l_conv)
+    x = Concatenate()([x_gmp, x_gap])
+    x = Dropout(0.2)(x)
 
-    # Attention before LSTM
-    attention_mul1 = attention_3d_block(inp, name='inp')
-
-    l_lstm = Bidirectional(GRU(50, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(attention_mul1)
-    l_dense = TimeDistributed(Dense(32))(l_lstm)
-    #sentEncoder = Model(inputs=inp, outputs=l_dense)
+    inp_reverse = Lambda(lambda x: K.reverse(x, axes=1))(inp_dr)
+    l_lstm_reverse = Bidirectional(CuDNNGRU(256, return_sequences=True))(inp_reverse)
+    l_lstm_reverse = Dropout(0.1)(l_lstm_reverse)
+    l_conv2_reverse = Conv1D(128, kernel_size = 2, padding = "valid", activation='elu', kernel_initializer = "he_uniform")(l_lstm_reverse)
+    l_conv3_reverse = Conv1D(128, kernel_size = 3, padding = "valid", activation='elu', kernel_initializer = "he_uniform")(l_lstm_reverse)
+    #_conv4_reverse = Conv1D(128, kernel_size = 4, padding = "valid", kernel_initializer = "he_uniform")(l_lstm_reverse)
+    #l_conv5_reverse = Conv1D(128, kernel_size = 5, padding = "valid", kernel_initializer = "he_uniform")(l_lstm_reverse)
+    #l_dense = TimeDistributed(Dense(50, activation="relu"))(l_lstm)
+    l_conv_reverse = Concatenate(axis=1)([l_conv2_reverse, l_conv3_reverse])    #l_dense_reverse = TimeDistributed(Dense(50, activation="relu"))(l_lstm_reverse)
+    x_reverse_gmp = GlobalMaxPool1D()(l_conv_reverse)
+    x_reverse_gap = GlobalAveragePooling1D()(l_conv_reverse)
+    x_reverse = Concatenate()([x_reverse_gmp, x_reverse_gap])
+    x_reverse = Dropout(0.2)(x_reverse)
 
     #l_lstm_sent = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(l_dense)
     #l_dense_sent = TimeDistributed(Dense(50))(l_lstm_sent)
-    x_gmp = GlobalMaxPool1D()(l_dense)
-    x_gap = GlobalAveragePooling1D()(l_dense)
-    x = Concatenate()([x_gmp, x_gap])
 
+    x = Concatenate(axis=1)([x, x_reverse])
     x = Dense(64, activation="elu")(x)
-    x = Dropout(0.5)(x)
-    dense_per_class = []
-    for i in classes:
-        x_dense = Dense(16, activation="elu")(x)
-        x_dense = Dropout(0.2)(x_dense)
-        x_dense = Dense(1, activation="sigmoid")(x_dense)
-        dense_per_class.append(x_dense)
-    multitask_output = Concatenate(axis=1)(dense_per_class)
-    model = Model(inputs=inp, outputs=multitask_output)
-    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-2, amsgrad=True), metrics=['accuracy'])
+    x = Dropout(0.1)(x)
+    x = Dense(6, activation="sigmoid")(x)
+
+    model = Model(inputs=inp, outputs=x)
+    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-3, amsgrad=True), metrics=['accuracy'])
 
     return model
 
+"""
+Normalize comment before training
+"""
+train['comment_text'] = train['comment_text'].apply(normalize)
+test['comment_text'] = test['comment_text'].apply(normalize)
 
 """
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'test_fasttext6_cv'
+saving_filename = 'fasttext_lstm8_cudnn_cv'
 
 # Define KFold and random state
-random_state = 407
+random_state = 4324455
 n_splits = 5
 kf = KFold(n_splits=n_splits, random_state=random_state)
 
@@ -417,19 +496,20 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     # Train/validation dataset
     x_train, x_val = train.iloc[train_index], train.iloc[val_index]
     y_train, y_val = train[classes].iloc[train_index], train[classes].iloc[val_index]
-
+    y_val = y_val.values
     # Convert validation set to fixed array
     print('Converting validation dataframe to array')
-    x_val = df_to_data(x_val)
+    #x_val = df_to_data(x_val)
     #validation_generator = data_generator_for_test(x_val, 1024)
-    y_val = y_val.values
+    #y_val = y_val.values
 
     # Build model
     print('Building model')
     model = build_lstm_stack_model()
 
     # Parameters
-    batch_size = 256
+    training_epochs = 10
+    batch_size = 128
     training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
     training_generator = data_generator(x_train, batch_size)
 
@@ -438,24 +518,54 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
 
     # Training
     print('Training model')
-    callback_history = model.fit_generator(
-                            training_generator,
-                            steps_per_epoch=training_steps_per_epoch,
-                            epochs=20,
-                            validation_data=(x_val, y_val),
-                            callbacks=[ival]
-                            )
+    for epoch in range(training_epochs):
+        callback_history = model.fit_generator(
+                                training_generator,
+                                steps_per_epoch=training_steps_per_epoch,
+                                max_queue_size=50,
+                                workers=4,
+                                epochs=1,
+                                )
+
+        # Predict at validation dataset
+        print('Validating')
+        validation_batch_size = 1024
+        validation_steps = math.ceil(len(x_val) / validation_batch_size)
+        validation_generator = data_generator_for_test(x_val, validation_batch_size)
+        y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+        score = roc_auc_score(y_val, y_val_pred, average=None, sample_weight=None)
+        score_mean, score_std = np.mean(score), np.std(score)
+        print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch + 1, score_mean, score_std))
+
 
     # Predict at validation dataset
-    y_val_pred = model.predict(x_val, batch_size=1024, verbose=1)
+    print('Validating')
+    validation_batch_size = 1024
+    validation_steps = math.ceil(len(x_val) / validation_batch_size)
+    pred_val_num = 10
+    y_val_preds = np.array([])
+    for i in range(pred_val_num):
+        validation_generator = data_generator_for_test(x_val, validation_batch_size)
+        if i == 0:
+            y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+            assert len(y_val_pred) == len(x_val)
+            y_val_preds = np.expand_dims(y_val_pred, 2)
+        else:
+            y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+            y_val_pred = np.expand_dims(y_val_pred, 2)
+            y_val_preds = np.concatenate([y_val_preds, y_val_pred], axis=2)
+    y_val_preds_max = y_val_preds.max(2)
+
     # Asign results to dataframe
-    pred_oof.loc[val_index, classes] = y_val_pred
+    pred_oof.loc[val_index, classes] = y_val_preds_max
+
     # Evaluate validation results
-    auc_val = roc_auc_score(y_val, y_val_pred, average=None, sample_weight=None)
+    auc_val = roc_auc_score(y_val, y_val_preds_max, average=None, sample_weight=None)
     auc_val_mean = np.mean(auc_val)
     auc_val_std = np.std(auc_val)
     auc_pred_oof.append([auc_val_mean, auc_val_std])
     print('Averaged AUC of validation: {}+{}'.format(auc_val_mean, auc_val_std))
+
 
     # Predict test dataset several times at random
     print('Testing')
@@ -480,7 +590,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
 
     # Save model every fold
     #from keras.models import load_model
-    #model.save('../model/model_{}_{}.h5'.format(saving_filename, fold_idx))  # creates a HDF5 file 'my_model.h5'
+    model.save('../model/model_{}_{}.h5'.format(saving_filename, fold_idx))  # creates a HDF5 file 'my_model.h5'
 
 # AUC of cross-validation
 auc_pred_oof_fold = [auc_mean for auc_mean, auc_std in auc_pred_oof]
@@ -490,6 +600,8 @@ auc_pred_oof_std = np.std(auc_pred_oof_fold)
 # Save result of cross-validation
 pred_oof.to_csv('../output/{}_oof_{:.06f}_{:.06f}.csv'.format(saving_filename, auc_pred_oof_mean, auc_pred_oof_std), index=False)
 pred_test.to_csv('../output/{}_test.csv'.format(saving_filename), index=False)
+
+
 """
 sample_submission = pd.read_csv('../input/sample_submission.csv')
 test_fasttext1 = pd.read_csv('../output/test_fasttext_val0.9893_0.0037.csv')
@@ -499,5 +611,37 @@ sample_submission.to_csv('../output/avg_test_fasttext1_test_fasttext2.csv', inde
 # fasttext1: 0.9831
 # fasttext2: 0.9841
 # fasttext1+2: 0.9847
+
+
+fasttext2_cv = pd.read_csv('../output/test_fasttext2_cv_oof_0.988522_0.000522.csv')
+fasttext_correct_toxic_cv = pd.read_csv('../output/fasttext_correct_toxic_cv_oof_0.988551_0.000352.csv')
+fasttext_lstm2_cv = pd.read_csv('../output/fasttext_lstm2_cv_oof_0.988600_0.000528.csv')
+fasttext_lstm1_cv = pd.read_csv('../output/fasttext_lstm1_cv_oof_0.988598_0.000409.csv')
+
+cv_emsenble = (fasttext2_cv[classes] + \
+               fasttext_correct_toxic_cv[classes] + \
+               fasttext_lstm2_cv[classes] + \
+               fasttext_lstm1_cv[classes]) / 4
+
+auc_val = roc_auc_score(train[classes].values, cv_emsenble, average=None, sample_weight=None)
+
+
+sample_submission = pd.read_csv('../input/sample_submission.csv')
+avg_test_fasttext1_test_fasttext2_test_fasttext5 = pd.read_csv('../output/avg_test_fasttext1_test_fasttext2_test_fasttext5.csv')
+fasttext2_cv = pd.read_csv('../output/test_fasttext2_cv_test.csv')
+fasttext_correct_toxic_cv = pd.read_csv('../output/fasttext_correct_toxic_cv_test.csv')
+fasttext_lstm2_cv = pd.read_csv('../output/fasttext_lstm2_cv_test.csv')
+fasttext_lstm1_cv = pd.read_csv('../output/fasttext_lstm1_cv_test.csv')
+
+
+sample_submission[classes] = (avg_test_fasttext1_test_fasttext2_test_fasttext5[classes] + \
+                fasttext2_cv[classes] + \
+               fasttext_correct_toxic_cv[classes] + \
+               fasttext_lstm2_cv[classes] + \
+               fasttext_lstm1_cv[classes]) / 5
+sample_submission.to_csv('../output/fasttext2_cv_fasttext_correct_toxic_cv_lstm1_2_features.csv', index=False)
+# fasttext2_cv_avg9857: 0.9860
+# fasttext2_cv_avg9857_fasttext_correct_toxic_cv: 0.9862
+# fasttext2_cv_fasttext_correct_toxic_cv_lstm1_2: 0.9861
 
 """

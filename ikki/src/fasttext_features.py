@@ -24,7 +24,7 @@ import logging
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers import Dense, Input, LSTM, GRU, Embedding, Dropout, Activation, Flatten
-from keras.layers import Bidirectional, GlobalMaxPool1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate
+from keras.layers import Bidirectional, GlobalMaxPool1D, GlobalAveragePooling1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate
 
 from keras.models import Model
 from keras import initializers, regularizers, constraints, optimizers, layers
@@ -38,7 +38,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold
 
 
-window_length = 250 # The amount of words we look at per example. Experiment with this.
+window_length = 300 # The amount of words we look at per example. Experiment with this.
 
 """
 Data loading
@@ -77,63 +77,63 @@ def make_asterisk_toxic_word(toxic_word):
 swear_words = list(csv.reader(open('../external_data/swearWords.csv', 'r')))[0]
 ast_word2word = {ast_word: word for word in swear_words for ast_word in make_asterisk_toxic_word(word)}
 
-# Expanding contraction 
-CONTRACTION_MAP = {"ain't": "is not", "aren't": "are not","can't": "cannot", 
-                   "can't've": "cannot have", "'cause": "because", "could've": "could have", 
-                   "couldn't": "could not", "couldn't've": "could not have","didn't": "did not", 
-                   "doesn't": "does not", "don't": "do not", "hadn't": "had not", 
-                   "hadn't've": "had not have", "hasn't": "has not", "haven't": "have not", 
-                   "he'd": "he would", "he'd've": "he would have", "he'll": "he will", 
-                   "he'll've": "he he will have", "he's": "he is", "how'd": "how did", 
-                   "how'd'y": "how do you", "how'll": "how will", "how's": "how is", 
-                   "I'd": "I would", "I'd've": "I would have", "I'll": "I will", 
-                   "I'll've": "I will have","I'm": "I am", "I've": "I have", 
-                   "i'd": "i would", "i'd've": "i would have", "i'll": "i will", 
-                   "i'll've": "i will have","i'm": "i am", "i've": "i have", 
-                   "isn't": "is not", "it'd": "it would", "it'd've": "it would have", 
-                   "it'll": "it will", "it'll've": "it will have","it's": "it is", 
-                   "let's": "let us", "ma'am": "madam", "mayn't": "may not", 
-                   "might've": "might have","mightn't": "might not","mightn't've": "might not have", 
-                   "must've": "must have", "mustn't": "must not", "mustn't've": "must not have", 
-                   "needn't": "need not", "needn't've": "need not have","o'clock": "of the clock", 
+# Expanding contraction
+CONTRACTION_MAP = {"ain't": "is not", "aren't": "are not","can't": "cannot",
+                   "can't've": "cannot have", "'cause": "because", "could've": "could have",
+                   "couldn't": "could not", "couldn't've": "could not have","didn't": "did not",
+                   "doesn't": "does not", "don't": "do not", "hadn't": "had not",
+                   "hadn't've": "had not have", "hasn't": "has not", "haven't": "have not",
+                   "he'd": "he would", "he'd've": "he would have", "he'll": "he will",
+                   "he'll've": "he he will have", "he's": "he is", "how'd": "how did",
+                   "how'd'y": "how do you", "how'll": "how will", "how's": "how is",
+                   "I'd": "I would", "I'd've": "I would have", "I'll": "I will",
+                   "I'll've": "I will have","I'm": "I am", "I've": "I have",
+                   "i'd": "i would", "i'd've": "i would have", "i'll": "i will",
+                   "i'll've": "i will have","i'm": "i am", "i've": "i have",
+                   "isn't": "is not", "it'd": "it would", "it'd've": "it would have",
+                   "it'll": "it will", "it'll've": "it will have","it's": "it is",
+                   "let's": "let us", "ma'am": "madam", "mayn't": "may not",
+                   "might've": "might have","mightn't": "might not","mightn't've": "might not have",
+                   "must've": "must have", "mustn't": "must not", "mustn't've": "must not have",
+                   "needn't": "need not", "needn't've": "need not have","o'clock": "of the clock",
                    "oughtn't": "ought not", "oughtn't've": "ought not have", "shan't": "shall not",
-                   "sha'n't": "shall not", "shan't've": "shall not have", "she'd": "she would", 
-                   "she'd've": "she would have", "she'll": "she will", "she'll've": "she will have", 
-                   "she's": "she is", "should've": "should have", "shouldn't": "should not", 
-                   "shouldn't've": "should not have", "so've": "so have","so's": "so as", 
+                   "sha'n't": "shall not", "shan't've": "shall not have", "she'd": "she would",
+                   "she'd've": "she would have", "she'll": "she will", "she'll've": "she will have",
+                   "she's": "she is", "should've": "should have", "shouldn't": "should not",
+                   "shouldn't've": "should not have", "so've": "so have","so's": "so as",
                    "this's": "this is",
-                   "that'd": "that would", "that'd've": "that would have","that's": "that is", 
-                   "there'd": "there would", "there'd've": "there would have","there's": "there is", 
-                   "they'd": "they would", "they'd've": "they would have", "they'll": "they will", 
-                   "they'll've": "they will have", "they're": "they are", "they've": "they have", 
-                   "to've": "to have", "wasn't": "was not", "we'd": "we would", 
-                   "we'd've": "we would have", "we'll": "we will", "we'll've": "we will have", 
-                   "we're": "we are", "we've": "we have", "weren't": "were not", 
-                   "what'll": "what will", "what'll've": "what will have", "what're": "what are", 
-                   "what's": "what is", "what've": "what have", "when's": "when is", 
-                   "when've": "when have", "where'd": "where did", "where's": "where is", 
-                   "where've": "where have", "who'll": "who will", "who'll've": "who will have", 
-                   "who's": "who is", "who've": "who have", "why's": "why is", 
-                   "why've": "why have", "will've": "will have", "won't": "will not", 
-                   "won't've": "will not have", "would've": "would have", "wouldn't": "would not", 
+                   "that'd": "that would", "that'd've": "that would have","that's": "that is",
+                   "there'd": "there would", "there'd've": "there would have","there's": "there is",
+                   "they'd": "they would", "they'd've": "they would have", "they'll": "they will",
+                   "they'll've": "they will have", "they're": "they are", "they've": "they have",
+                   "to've": "to have", "wasn't": "was not", "we'd": "we would",
+                   "we'd've": "we would have", "we'll": "we will", "we'll've": "we will have",
+                   "we're": "we are", "we've": "we have", "weren't": "were not",
+                   "what'll": "what will", "what'll've": "what will have", "what're": "what are",
+                   "what's": "what is", "what've": "what have", "when's": "when is",
+                   "when've": "when have", "where'd": "where did", "where's": "where is",
+                   "where've": "where have", "who'll": "who will", "who'll've": "who will have",
+                   "who's": "who is", "who've": "who have", "why's": "why is",
+                   "why've": "why have", "will've": "will have", "won't": "will not",
+                   "won't've": "will not have", "would've": "would have", "wouldn't": "would not",
                    "wouldn't've": "would not have", "y'all": "you all", "y'all'd": "you all would",
                    "y'all'd've": "you all would have","y'all're": "you all are","y'all've": "you all have",
-                   "you'd": "you would", "you'd've": "you would have", "you'll": "you will", 
+                   "you'd": "you would", "you'd've": "you would have", "you'll": "you will",
                    "you'll've": "you will have", "you're": "you are", "you've": "you have" }
 
-def expand_contractions(sentence, contraction_mapping): 
-     
-    contractions_pattern = re.compile('({})'.format('|'.join(contraction_mapping.keys())),  
-                                      flags=re.IGNORECASE|re.DOTALL) 
-    def expand_match(contraction): 
-        match = contraction.group(0) 
-        first_char = match[0] 
-        expanded_contraction = contraction_mapping.get(match) if contraction_mapping.get(match) else contraction_mapping.get(match.lower())                        
-        expanded_contraction = first_char+expanded_contraction[1:] 
-        return expanded_contraction 
-         
-    expanded_sentence = contractions_pattern.sub(expand_match, sentence) 
-    return expanded_sentence 
+def expand_contractions(sentence, contraction_mapping):
+
+    contractions_pattern = re.compile('({})'.format('|'.join(contraction_mapping.keys())),
+                                      flags=re.IGNORECASE|re.DOTALL)
+    def expand_match(contraction):
+        match = contraction.group(0)
+        first_char = match[0]
+        expanded_contraction = contraction_mapping.get(match) if contraction_mapping.get(match) else contraction_mapping.get(match.lower())
+        expanded_contraction = first_char+expanded_contraction[1:]
+        return expanded_contraction
+
+    expanded_sentence = contractions_pattern.sub(expand_match, sentence)
+    return expanded_sentence
 
 def normalize(s):
     """
@@ -149,19 +149,22 @@ def normalize(s):
     s = s.replace('\*uc\*', 'fuck')
     s = s.replace('God damn', 'goddamn')
     s = s.replace('knob end', 'knobend')
-    
+
     # Expand contractions
     s = expand_contractions(s, CONTRACTION_MAP)
     # Remove accent marks
     #s = remove_accent_before_tokens(s)
     # Replace ips
     s = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', ' _ip_ ', s)
-    # Isolate punctuation    
+    # Isolate punctuation
     s = re.sub(r'([\'\"\.\(\)\!\?\-\\\/\,\#])', r' \1 ', s).replace('\1', '')
-    # Remove some special characters 
+    # Remove some special characters
     s = re.sub(r'([\;\:\|•«\n=:;",.\/—\-\(\)~\[\]\_\#])', ' ', s)
     # Remove special word
     s = re.sub(r'([☺☻♥♦♣♠•◘○♂♀♪♫☼►◄])', ' ', s)
+    # Remove repeated (consecutive) words
+    #TODO: 繋がっている単語はわけられない　'fuck fuck'=>'fuck', 'FUCKFUCK'=>'FUCKFUCK'
+    s = re.sub(r'\b(\w+)( \1\b)+', r'\1', s)
     # Remove new lines
     # Replace numbers and symbols with language
     s = s.replace('&', ' and ')
@@ -264,7 +267,6 @@ def data_generator(df, batch_size):
 
             if batch_i == batch_size:
                 # Ready to yield the batch
-                print('generating data')
                 yield batch_x, batch_y
                 batch_x = None
                 batch_y = None
@@ -406,19 +408,21 @@ def build_lstm_stack_model(logdir='attention'):
     inp = Input(shape=(window_length, 300))
 
     l_lstm = Bidirectional(GRU(200, return_sequences=True, dropout=0.1, recurrent_dropout=0.1))(inp)
-    l_dense = TimeDistributed(Dense(100))(l_lstm)
+    l_dense = TimeDistributed(Dense(100, activation="elu"))(l_lstm)
     l_dense = Dropout(0.1)(l_dense)
     sentEncoder = Model(inputs=inp, outputs=l_dense)
 
     l_lstm_sent = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(l_dense)
-    l_dense_sent = TimeDistributed(Dense(50))(l_lstm_sent)
+    l_dense_sent = TimeDistributed(Dense(50, activation="elu"))(l_lstm_sent)
 
-    stack_lstm_output = GlobalMaxPool1D()(l_dense_sent)
+    x_gmp = GlobalMaxPool1D()(l_dense_sent)
+    x_gap = GlobalAveragePooling1D()(l_dense_sent)
+    x = Concatenate()([x_gmp, x_gap])
 
-    inp_reshape = Reshape((-1,))(inp)
+    #inp_reshape = Reshape((-1,))(inp)
 
-    x = Concatenate(axis=-1)([stack_lstm_output, inp_reshape])
-    x = Dense(1024, activation="elu")(x)
+    #x = Concatenate(axis=-1)([stack_lstm_output, inp_reshape])
+    x = Dense(512, activation="elu")(x)
     x = Dropout(0.5)(x)
     x = Dense(6, activation="sigmoid")(x)
     model = Model(inputs=inp, outputs=x)
@@ -456,19 +460,20 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     # Train/validation dataset
     x_train, x_val = train.iloc[train_index], train.iloc[val_index]
     y_train, y_val = train[classes].iloc[train_index], train[classes].iloc[val_index]
-
+    y_val = y_val.values
     # Convert validation set to fixed array
     print('Converting validation dataframe to array')
-    x_val = df_to_data(x_val)
+    #x_val = df_to_data(x_val)
     #validation_generator = data_generator_for_test(x_val, 1024)
-    y_val = y_val.values
+    #y_val = y_val.values
 
     # Build model
     print('Building model')
     model = build_lstm_stack_model()
 
     # Parameters
-    batch_size = 512
+    training_epochs = 15
+    batch_size = 128
     training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
     training_generator = data_generator(x_train, batch_size)
 
@@ -477,25 +482,51 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
 
     # Training
     print('Training model')
-    callback_history = model.fit_generator(
-                            training_generator,
-                            steps_per_epoch=training_steps_per_epoch,
-                            epochs=15,
-                            validation_data=(x_val, y_val),
-                            callbacks=[ival]
-                            )
+    for epoch in range(training_epochs):
+        callback_history = model.fit_generator(
+                                training_generator,
+                                steps_per_epoch=training_steps_per_epoch,
+                                epochs=1,
+                                )
+
+        # Predict at validation dataset
+        print('Validating')
+        validation_batch_size = 1024
+        validation_steps = math.ceil(len(x_val) / validation_batch_size)
+        validation_generator = data_generator_for_test(x_val, validation_batch_size)
+        y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+        score = roc_auc_score(y_val, y_val_pred, average=None, sample_weight=None)
+        score_mean, score_std = np.mean(score), np.std(score)
+        print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch + 1, score_mean, score_std))
+
 
     # Predict at validation dataset
     print('Validating')
-    y_val_pred = model.predict(x_val, batch_size=1024, verbose=1)
+    validation_batch_size = 1024
+    validation_steps = math.ceil(len(x_val) / validation_batch_size)
+    pred_val_num = 10
+    y_val_preds = np.array([])
+    for i in range(pred_val_num):
+        validation_generator = data_generator_for_test(x_val, validation_batch_size)
+        if i == 0:
+            y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+            assert len(y_val_pred) == len(x_val)
+            y_val_preds = np.expand_dims(y_val_pred, 2)
+        else:
+            y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+            y_val_pred = np.expand_dims(y_val_pred, 2)
+            y_val_preds = np.concatenate([y_val_preds, y_val_pred], axis=2)
+    y_val_preds_max = y_val_preds.max(2)
+
     # Asign results to dataframe
-    pred_oof.loc[val_index, classes] = y_val_pred
+    pred_oof.loc[val_index, classes] = y_val_preds_max
     # Evaluate validation results
-    auc_val = roc_auc_score(y_val, y_val_pred, average=None, sample_weight=None)
+    auc_val = roc_auc_score(y_val, y_val_preds_max, average=None, sample_weight=None)
     auc_val_mean = np.mean(auc_val)
     auc_val_std = np.std(auc_val)
     auc_pred_oof.append([auc_val_mean, auc_val_std])
     print('Averaged AUC of validation: {}+{}'.format(auc_val_mean, auc_val_std))
+
 
     # Predict test dataset several times at random
     print('Testing')
@@ -541,4 +572,36 @@ sample_submission.to_csv('../output/avg_test_fasttext1_test_fasttext2.csv', inde
 # fasttext1: 0.9831
 # fasttext2: 0.9841
 # fasttext1+2: 0.9847
+
+sample_submission = pd.read_csv('../input/sample_submission.csv')
+avg_test_fasttext1_test_fasttext2_test_fasttext5 = pd.read_csv('../output/avg_test_fasttext1_test_fasttext2_test_fasttext5.csv')
+fasttext2_cv = pd.read_csv('../output/test_fasttext2_cv_test.csv')
+fasttext_correct_toxic_cv = pd.read_csv('../output/fasttext_correct_toxic_cv_test.csv')
+
+# CV
+fasttext2_cv = pd.read_csv('../output/test_fasttext2_cv_oof_0.988522_0.000522.csv')
+fasttext_correct_toxic_cv = pd.read_csv('../output/fasttext_correct_toxic_cv_oof_0.988551_0.000352.csv')
+fasttext_features_cv = pd.read_csv('../output/fasttext_features_cv_oof_0.984296_0.000462.csv')
+
+cv_emsenble = (fasttext2_cv[classes] + fasttext_correct_toxic_cv[classes]) / 2
+
+fasttext2_cv_rank = (fasttext2_cv[classes].rank(0) - fasttext2_cv[classes].rank(0).min(0)) / (fasttext2_cv[classes].rank(0).max(0) - fasttext2_cv[classes].rank(0).min(0))
+fasttext_correct_toxic_cv_rank = (fasttext_correct_toxic_cv[classes].rank(0) - fasttext_correct_toxic_cv[classes].rank(0).min(0)) / (fasttext_correct_toxic_cv[classes].rank(0).max(0) - fasttext_correct_toxic_cv[classes].rank(0).min(0))
+cv_emsenble_rank = (fasttext2_cv_rank[classes] + fasttext_correct_toxic_cv_rank[classes]) / 2
+auc_val = roc_auc_score(train[classes].values, cv_emsenble, average=None, sample_weight=None)
+fasttext_features_cv_oof_0.984296_0.000462
+
+
+
+sample_submission = pd.read_csv('../input/sample_submission.csv')
+avg_test_fasttext1_test_fasttext2_test_fasttext5 = pd.read_csv('../output/avg_test_fasttext1_test_fasttext2_test_fasttext5.csv')
+fasttext2_cv = pd.read_csv('../output/test_fasttext2_cv_test.csv')
+fasttext_correct_toxic_cv = pd.read_csv('../output/fasttext_correct_toxic_cv_test.csv')
+fasttext_features_cv = pd.read_csv('../output/fasttext_features_cv_test.csv')
+
+sample_submission[classes] = (avg_test_fasttext1_test_fasttext2_test_fasttext5[classes] + fasttext2_cv[classes] + fasttext_correct_toxic_cv[classes] + fasttext_features_cv[classes]) / 4
+sample_submission.to_csv('../output/fasttext2_cv_avg9857_fasttext_correct_toxic_cv_fasttext_features_cv.csv', index=False)
+# fasttext2_cv_avg9857: 0.9860
+# fasttext2_cv_avg9857_fasttext_correct_toxic_cv: 0.9862
+
 """

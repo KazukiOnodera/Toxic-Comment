@@ -1,4 +1,6 @@
 """
+特徴量作成?
+
 参考
 https://www.kaggle.com/mschumacher/using-fasttext-models-for-robust-embeddings/notebook
 
@@ -10,6 +12,9 @@ TODO: module化する
 import os
 import re
 import math
+import csv
+import itertools
+from collections import Counter
 import numpy as np
 import pandas as pd
 from fastText import load_model
@@ -19,7 +24,9 @@ import logging
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers import Dense, Input, LSTM, GRU, Embedding, Dropout, Activation, Flatten
-from keras.layers import Bidirectional, GlobalMaxPool1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate, GlobalAveragePooling1D
+from keras.layers import Bidirectional, GlobalMaxPool1D, GlobalAveragePooling1D, TimeDistributed, Permute, Reshape, Lambda, RepeatVector, Multiply, Concatenate
+from keras.layers import Conv2D, Lambda
+from keras.layers import MaxPooling2D, BatchNormalization
 
 from keras.models import Model
 from keras import initializers, regularizers, constraints, optimizers, layers
@@ -36,12 +43,41 @@ from sklearn.model_selection import KFold
 window_length = 250 # The amount of words we look at per example. Experiment with this.
 
 """
+Data loading
+"""
+print("Loading train/test data")
+train = pd.read_csv('../input/train.csv')
+test = pd.read_csv('../input/test.csv')
+
+# target classes
+classes = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
+
+
+"""
 Preprocessing functions
 """
 # Remove accent marks
 def remove_accent_before_tokens(sentences):
     res = unidecode.unidecode(sentences)
     return(res)
+
+# Frequent Emphasized word
+
+
+# Replace toxic words
+def make_asterisk_toxic_word(toxic_word):
+    split_word = list(toxic_word)
+    product_set = [[split_char, '*'] if split_char != ' ' else [split_char] for split_char in split_word]
+    asterisk_word = list(itertools.product(*product_set))
+    asterisk_word_list = list(map(lambda x: ''.join(x), asterisk_word))
+    # remove original word
+    asterisk_word_list.remove(toxic_word)
+    # remove all asterisk word
+    asterisk_word_list = [word for word in asterisk_word_list if len(Counter(''.join(word.split())).values()) != 1]
+    return asterisk_word_list
+
+swear_words = list(csv.reader(open('../external_data/swearWords.csv', 'r')))[0]
+ast_word2word = {ast_word: word for word in swear_words for ast_word in make_asterisk_toxic_word(word)}
 
 # Expanding contraction
 CONTRACTION_MAP = {"ain't": "is not", "aren't": "are not","can't": "cannot",
@@ -108,6 +144,14 @@ def normalize(s):
     s = s.lower()
     # Special preprocessing
     s = s.replace('ı', 'i')
+    s = s.replace('sh1t', 'shit')
+    s = s.replace('f uck', 'fuck')
+    s = s.replace('f u c k', 'fuck')
+    s = s.replace('blow job', 'blowjob')
+    s = s.replace('\*uc\*', 'fuck')
+    s = s.replace('God damn', 'goddamn')
+    s = s.replace('knob end', 'knobend')
+
     # Expand contractions
     s = expand_contractions(s, CONTRACTION_MAP)
     # Remove accent marks
@@ -120,6 +164,9 @@ def normalize(s):
     s = re.sub(r'([\;\:\|•«\n=:;",.\/—\-\(\)~\[\]\_\#])', ' ', s)
     # Remove special word
     s = re.sub(r'([☺☻♥♦♣♠•◘○♂♀♪♫☼►◄])', ' ', s)
+    # Remove repeated (consecutive) words
+    #TODO: 繋がっている単語はわけられない　'fuck fuck'=>'fuck', 'FUCKFUCK'=>'FUCKFUCK'
+    s = re.sub(r'\b(\w+)( \1\b)+', r'\1', s)
     # Remove new lines
     # Replace numbers and symbols with language
     s = s.replace('&', ' and ')
@@ -153,8 +200,8 @@ class IntervalEvaluation(Callback):
             score = roc_auc_score(self.y_val, y_pred, average=None, sample_weight=None)
             score_mean, score_std = np.mean(score), np.std(score)
             self.score_hitory.append([score_mean, score_std])
-            logging.info("interval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch+1, score_mean, score_std))
-            print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch+1, score_mean, score_std))
+            logging.info("interval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch, score_mean, score_std))
+            print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch, score_mean, score_std))
 
 """
 Function to generate training data
@@ -169,6 +216,12 @@ def text_to_vector(text):
     text = normalize(text)
     words = text.split()
     #TODO: remove stop words(https://www.kaggle.com/saxinou/nlp-01-preprocessing-data)
+    # *を含む単語を置換する
+    words = [ast_word2word.get(word) if ast_word2word.get(word) is not None else word for word in words]
+    # 繰り視される単語をゆにーくにする
+    words = [re.sub(r'([a-z]+)\1+', r'\1', word) if len(word) > 100 else word for word in words]
+    # 置換後は*を取り除く?
+    #words = [word.replace('*', '') for word in words]
     words_num = len(words)
     if words_num <= window_length:
         window = words
@@ -253,17 +306,6 @@ def data_generator_for_test(df, batch_size):
             batch_x = None
             batch_i = 0
 
-
-"""
-Data loading
-"""
-print("Loading train/test data")
-train = pd.read_csv('../input/train.csv')
-test = pd.read_csv('../input/test.csv')
-
-# target classes
-classes = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
-
 """
 Preprocessings
 """
@@ -275,6 +317,15 @@ Preprocessings
 train['comment_text'] = train['comment_text'].str.replace('ı', 'i')
 test['comment_text'] = test['comment_text'].str.replace('ı', 'i')
 
+# 両端に*がある単語を取得
+# 存在するものは除く
+tmp = pd.concat([train, test]).comment_text.apply(normalize)
+tmp2 = tmp.str.split().apply(lambda x: [w for w in x if (w[0] == w[-1] == '*') or (len(w) >= 5 and w[0] == w[1] == w[-2] == w[-1] == '*')])
+tmp3 = tmp2[tmp2.apply(len)!=0]
+ast_between_word = pd.Series(np.concatenate(tmp3.tolist())).value_counts()
+delete_key_words = [word for word in ast_between_word.index if ast_word2word.get(word) is not None]
+for del_key in delete_key_words:
+    del ast_word2word[del_key]
 
 # Normalize comment_text (IMPLEMENTED IN GENERATOR)
 #train['comment_text'] = train['comment_text'].apply(normalize)
@@ -359,31 +410,36 @@ def build_attention_model():
 def build_lstm_stack_model(logdir='attention'):
     # Bidirectional-LSTM
     inp = Input(shape=(window_length, 300))
+    inp_expand = Reshape((window_length, 300, 1))(inp)
+    conv1 = Conv2D(256, kernel_size=(5, 300), padding='valid', activation='elu')(inp_expand)
+    conv2 = Conv2D(256, kernel_size=(5, 1), padding='valid', activation='elu')(conv1)
+    conv2_bn = BatchNormalization()(conv2)
+    conv2_do = Dropout(0.05)(conv2_bn)
+    conv2_pool = MaxPooling2D(pool_size=(2, 1), strides=None, padding='valid')(conv2_do)
+    conv3 = Conv2D(256, kernel_size=(4, 1), padding='valid', activation='elu')(conv2_pool)
+    conv4 = Conv2D(256, kernel_size=(4, 1), padding='valid', activation='elu')(conv3)
+    conv4_pool = MaxPooling2D(pool_size=(2, 1), strides=None, padding='valid')(conv4)
+    conv4_bn = BatchNormalization()(conv4_pool)
+    conv4_do = Dropout(0.05)(conv4_bn)
+    conv5 = Conv2D(256, kernel_size=(3, 1), padding='valid', activation='elu')(conv4_pool)
+    conv6 = Conv2D(256, kernel_size=(3, 1), padding='valid', activation='elu')(conv5)
+    conv6_pool = MaxPooling2D(pool_size=(2, 1), strides=None, padding='valid')(conv6)
+    conv6_bn = BatchNormalization()(conv6_pool)
+    conv6_do = Dropout(0.05)(conv6_bn)
 
-    # Attention before LSTM
-    attention_mul1 = attention_3d_block(inp, name='inp')
+    conv6_flat = Flatten()(conv6_do)
 
-    l_lstm = Bidirectional(GRU(50, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(attention_mul1)
-    l_dense = TimeDistributed(Dense(32))(l_lstm)
-    #sentEncoder = Model(inputs=inp, outputs=l_dense)
-
-    #l_lstm_sent = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(l_dense)
-    #l_dense_sent = TimeDistributed(Dense(50))(l_lstm_sent)
-    x_gmp = GlobalMaxPool1D()(l_dense)
-    x_gap = GlobalAveragePooling1D()(l_dense)
-    x = Concatenate()([x_gmp, x_gap])
-
-    x = Dense(64, activation="elu")(x)
-    x = Dropout(0.5)(x)
+    x = Dense(512, activation="relu")(conv6_flat)
+    x = Dropout(0.3)(x)
     dense_per_class = []
     for i in classes:
-        x_dense = Dense(16, activation="elu")(x)
-        x_dense = Dropout(0.2)(x_dense)
+        x_dense = Dense(32, activation="relu")(x)
+        x_dense = Dropout(0.1)(x_dense)
         x_dense = Dense(1, activation="sigmoid")(x_dense)
         dense_per_class.append(x_dense)
     multitask_output = Concatenate(axis=1)(dense_per_class)
     model = Model(inputs=inp, outputs=multitask_output)
-    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-2, amsgrad=True), metrics=['accuracy'])
+    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-3, amsgrad=True), metrics=['accuracy'])
 
     return model
 
@@ -392,10 +448,10 @@ def build_lstm_stack_model(logdir='attention'):
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'test_fasttext6_cv'
+saving_filename = 'fasttext_conv1_cv'
 
 # Define KFold and random state
-random_state = 407
+random_state = 1232
 n_splits = 5
 kf = KFold(n_splits=n_splits, random_state=random_state)
 
@@ -417,18 +473,19 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     # Train/validation dataset
     x_train, x_val = train.iloc[train_index], train.iloc[val_index]
     y_train, y_val = train[classes].iloc[train_index], train[classes].iloc[val_index]
-
+    y_val = y_val.values
     # Convert validation set to fixed array
     print('Converting validation dataframe to array')
-    x_val = df_to_data(x_val)
+    #x_val = df_to_data(x_val)
     #validation_generator = data_generator_for_test(x_val, 1024)
-    y_val = y_val.values
+    #y_val = y_val.values
 
     # Build model
     print('Building model')
     model = build_lstm_stack_model()
 
     # Parameters
+    training_epochs = 15
     batch_size = 256
     training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
     training_generator = data_generator(x_train, batch_size)
@@ -438,24 +495,52 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
 
     # Training
     print('Training model')
-    callback_history = model.fit_generator(
-                            training_generator,
-                            steps_per_epoch=training_steps_per_epoch,
-                            epochs=20,
-                            validation_data=(x_val, y_val),
-                            callbacks=[ival]
-                            )
+    for epoch in range(training_epochs):
+        callback_history = model.fit_generator(
+                                training_generator,
+                                steps_per_epoch=training_steps_per_epoch,
+                                epochs=1,
+                                )
+
+        # Predict at validation dataset
+        print('Validating')
+        validation_batch_size = 1024
+        validation_steps = math.ceil(len(x_val) / validation_batch_size)
+        validation_generator = data_generator_for_test(x_val, validation_batch_size)
+        y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+        score = roc_auc_score(y_val, y_val_pred, average=None, sample_weight=None)
+        score_mean, score_std = np.mean(score), np.std(score)
+        print("\ninterval evaluation - epoch: {:d} - score: {:.6f}+{:.6f}".format(epoch + 1, score_mean, score_std))
+
 
     # Predict at validation dataset
-    y_val_pred = model.predict(x_val, batch_size=1024, verbose=1)
+    print('Validating')
+    validation_batch_size = 1024
+    validation_steps = math.ceil(len(x_val) / validation_batch_size)
+    pred_val_num = 10
+    y_val_preds = np.array([])
+    for i in range(pred_val_num):
+        validation_generator = data_generator_for_test(x_val, validation_batch_size)
+        if i == 0:
+            y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+            assert len(y_val_pred) == len(x_val)
+            y_val_preds = np.expand_dims(y_val_pred, 2)
+        else:
+            y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
+            y_val_pred = np.expand_dims(y_val_pred, 2)
+            y_val_preds = np.concatenate([y_val_preds, y_val_pred], axis=2)
+    y_val_preds_max = y_val_preds.max(2)
+
     # Asign results to dataframe
-    pred_oof.loc[val_index, classes] = y_val_pred
+    pred_oof.loc[val_index, classes] = y_val_preds_max
+
     # Evaluate validation results
-    auc_val = roc_auc_score(y_val, y_val_pred, average=None, sample_weight=None)
+    auc_val = roc_auc_score(y_val, y_val_preds_max, average=None, sample_weight=None)
     auc_val_mean = np.mean(auc_val)
     auc_val_std = np.std(auc_val)
     auc_pred_oof.append([auc_val_mean, auc_val_std])
     print('Averaged AUC of validation: {}+{}'.format(auc_val_mean, auc_val_std))
+
 
     # Predict test dataset several times at random
     print('Testing')
@@ -490,6 +575,8 @@ auc_pred_oof_std = np.std(auc_pred_oof_fold)
 # Save result of cross-validation
 pred_oof.to_csv('../output/{}_oof_{:.06f}_{:.06f}.csv'.format(saving_filename, auc_pred_oof_mean, auc_pred_oof_std), index=False)
 pred_test.to_csv('../output/{}_test.csv'.format(saving_filename), index=False)
+
+
 """
 sample_submission = pd.read_csv('../input/sample_submission.csv')
 test_fasttext1 = pd.read_csv('../output/test_fasttext_val0.9893_0.0037.csv')
@@ -499,5 +586,4 @@ sample_submission.to_csv('../output/avg_test_fasttext1_test_fasttext2.csv', inde
 # fasttext1: 0.9831
 # fasttext2: 0.9841
 # fasttext1+2: 0.9847
-
 """
