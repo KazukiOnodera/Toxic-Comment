@@ -39,7 +39,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold
 
 
-window_length = 100 # The amount of words we look at per example. Experiment with this.
+window_length = 200 # The amount of words we look at per example. Experiment with this.
 
 """
 Data loading
@@ -160,7 +160,7 @@ def normalize(s):
     s = re.sub("xml\\S+", "LINK", s)
 
     # Remove modified text: f u c k  y o u => fuck you
-    s = re.sub("(?<=\\b\\w)\\s(?=\\w\\b)", "", s)
+    # s = re.sub("(?<=\\b\\w)\\s(?=\\w\\b)", "", s)
     # Remeve shit text
     # s = re.sub("\\b(a|e)w+\\b", "AWWWW", s)
     # s = re.sub("\\b(y)a+\\b", "YAAAA", s)
@@ -208,7 +208,7 @@ def normalize(s):
     # s = re.sub("((a+)|(h+)){3,}", "HAHEHI", s)
 
     # Remove modified text: f u c k  y o u => fuck you
-    s = re.sub("(?<=\\b\\w)\\s(?=\\w\\b)", "", s)
+    # s = re.sub("(?<=\\b\\w)\\s(?=\\w\\b)", "", s)
 
     s = re.sub("((lol)(o?))+\\b", "LOL", s)
     s = re.sub("n ig ger", "nigger", s)
@@ -236,20 +236,30 @@ def normalize(s):
     # Remove repeated (consecutive) words
     #TODO: 繋がっている単語はわけられない　'fuck fuck'=>'fuck', 'FUCKFUCK'=>'FUCKFUCK'
     s = re.sub(r'\b(\w+)( \1\b)+', r'\1', s)
+
+    # つながっている単語のUnique
+    # fuckfuckfuck => fuck, ksksksksksksksks => ks, fuckerfuckerfucker => fucker
+    for i in range(2, 20):
+        pattern = r'([a-z|0-9]{' + f'{i}' + r'})\1{1,}'
+        s = re.sub(pattern, r'\1', s)
+
     # Remove new lines
     # Replace numbers and symbols with language
     s = s.replace('&', ' and ')
     s = s.replace('@', ' at ')
-    s = s.replace('0', ' zero ')
-    s = s.replace('1', ' one ')
-    s = s.replace('2', ' two ')
-    s = s.replace('3', ' three ')
-    s = s.replace('4', ' four ')
-    s = s.replace('5', ' five ')
-    s = s.replace('6', ' six ')
-    s = s.replace('7', ' seven ')
-    s = s.replace('8', ' eight ')
-    s = s.replace('9', ' nine ')
+    # s = s.replace('0', ' zero ')
+    # s = s.replace('1', ' one ')
+    # s = s.replace('2', ' two ')
+    # s = s.replace('3', ' three ')
+    # s = s.replace('4', ' four ')
+    # s = s.replace('5', ' five ')
+    # s = s.replace('6', ' six ')
+    # s = s.replace('7', ' seven ')
+    # s = s.replace('8', ' eight ')
+    # s = s.replace('9', ' nine ')
+
+    # Remove number
+    s = re.sub(r'\b\d+(?:\.\d+)?\s+', ' ', s)
     return s
 
 """
@@ -287,8 +297,8 @@ def text_to_vector(text):
     #TODO: remove stop words(https://www.kaggle.com/saxinou/nlp-01-preprocessing-data)
     # *を含む単語を置換する
     words = [ast_word2word.get(word) if ast_word2word.get(word) is not None else word for word in words]
-    # 繰り視される単語をゆにーくにする
-    words = [re.sub(r'([a-z]+)\1+', r'\1', word) if len(word) > 100 else word for word in words]
+    # 繰り視される文字をゆにーくにする+ fuuuuuuuuuck -> fuck
+    words = [re.sub(r'([a-z]+?)\1+', r'\1', word) if len(word) > 30 else word for word in words]
     # 置換後は*を取り除く?
     #words = [word.replace('*', '') for word in words]
     words_num = len(words)
@@ -421,43 +431,19 @@ def build_lstm_stack_model(logdir='attention'):
     # Bidirectional-LSTM
     inp = Input(shape=(window_length, 300))
     inp_dr = SpatialDropout1D(0.05)(inp)
-    l_lstm = Bidirectional(CuDNNGRU(256, return_sequences=True))(inp_dr)
-    l_lstm = Dropout(0.1)(l_lstm)
-    l_conv2 = Conv1D(128, kernel_size = 2, padding = "valid", activation='elu', kernel_initializer = "he_uniform")(l_lstm)
-    l_conv3 = Conv1D(128, kernel_size = 3, padding = "valid", activation='elu', kernel_initializer = "he_uniform")(l_lstm)
-    #l_conv4 = Conv1D(128, kernel_size = 4, padding = "valid", kernel_initializer = "he_uniform")(l_lstm)
-    #l_conv5 = Conv1D(128, kernel_size = 5, padding = "valid", kernel_initializer = "he_uniform")(l_lstm)
-    #l_dense = TimeDistributed(Dense(50, activation="relu"))(l_lstm)
-    l_conv = Concatenate(axis=1)([l_conv2, l_conv3])
-    x_gmp = GlobalMaxPool1D()(l_conv)
-    x_gap = GlobalAveragePooling1D()(l_conv)
+    l_lstm = Bidirectional(CuDNNGRU(512, return_sequences=True))(inp_dr)
+    l_lstm = Dropout(0.05)(l_lstm)
+    x_gmp = GlobalMaxPool1D()(l_lstm)
+    x_gap = GlobalAveragePooling1D()(l_lstm)
     x = Concatenate()([x_gmp, x_gap])
     x = Dropout(0.2)(x)
 
-    inp_reverse = Lambda(lambda x: K.reverse(x, axes=1))(inp_dr)
-    l_lstm_reverse = Bidirectional(CuDNNGRU(256, return_sequences=True))(inp_reverse)
-    l_lstm_reverse = Dropout(0.1)(l_lstm_reverse)
-    l_conv2_reverse = Conv1D(128, kernel_size = 2, padding = "valid", activation='elu', kernel_initializer = "he_uniform")(l_lstm_reverse)
-    l_conv3_reverse = Conv1D(128, kernel_size = 3, padding = "valid", activation='elu', kernel_initializer = "he_uniform")(l_lstm_reverse)
-    #_conv4_reverse = Conv1D(128, kernel_size = 4, padding = "valid", kernel_initializer = "he_uniform")(l_lstm_reverse)
-    #l_conv5_reverse = Conv1D(128, kernel_size = 5, padding = "valid", kernel_initializer = "he_uniform")(l_lstm_reverse)
-    #l_dense = TimeDistributed(Dense(50, activation="relu"))(l_lstm)
-    l_conv_reverse = Concatenate(axis=1)([l_conv2_reverse, l_conv3_reverse])    #l_dense_reverse = TimeDistributed(Dense(50, activation="relu"))(l_lstm_reverse)
-    x_reverse_gmp = GlobalMaxPool1D()(l_conv_reverse)
-    x_reverse_gap = GlobalAveragePooling1D()(l_conv_reverse)
-    x_reverse = Concatenate()([x_reverse_gmp, x_reverse_gap])
-    x_reverse = Dropout(0.2)(x_reverse)
-
-    #l_lstm_sent = Bidirectional(GRU(100, return_sequences=True, dropout=0.2, recurrent_dropout=0.2))(l_dense)
-    #l_dense_sent = TimeDistributed(Dense(50))(l_lstm_sent)
-
-    x = Concatenate(axis=1)([x, x_reverse])
-    x = Dense(64, activation="elu")(x)
-    x = Dropout(0.1)(x)
+    x = Dense(256, activation="elu")(x)
+    x = Dropout(0.25)(x)
     x = Dense(6, activation="sigmoid")(x)
 
     model = Model(inputs=inp, outputs=x)
-    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=1e-3, amsgrad=True), metrics=['accuracy'])
+    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=5e-4, amsgrad=True), metrics=['accuracy'])
 
     return model
 
@@ -471,7 +457,7 @@ test['comment_text'] = test['comment_text'].apply(normalize)
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'fasttext_lstm8_cudnn_cv'
+saving_filename = 'fasttext_lstm11_cudnn_cv'
 
 # Define KFold and random state
 random_state = 4324455
@@ -508,8 +494,8 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     model = build_lstm_stack_model()
 
     # Parameters
-    training_epochs = 5
-    batch_size = 128
+    training_epochs = 10
+    batch_size = 64
     training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
     training_generator = data_generator(x_train, batch_size)
 

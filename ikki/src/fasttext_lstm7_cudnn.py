@@ -513,7 +513,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     model = build_lstm_stack_model()
 
     # Parameters
-    training_epochs = 10
+    training_epochs = 5
     batch_size = 128
     training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
     training_generator = data_generator(x_train, batch_size)

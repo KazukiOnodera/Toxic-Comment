@@ -447,7 +447,7 @@ test['comment_text'] = test['comment_text'].apply(normalize)
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'fasttext_lstm9_cudnn_cv'
+saving_filename = 'fasttext_lstm10_cudnn_cv'
 
 # Define KFold and random state
 random_state = 4324455
@@ -484,7 +484,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     model = build_lstm_stack_model()
 
     # Parameters
-    training_epochs = 7
+    training_epochs = 5
     batch_size = 96
     training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
     training_generator = data_generator(x_train, batch_size)

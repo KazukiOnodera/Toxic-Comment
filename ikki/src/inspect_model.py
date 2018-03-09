@@ -78,13 +78,13 @@ for label in labels:
 submission = pd.DataFrame()
 submission['id'] = lstm1['id']
 for label in labels:
-    submission[label] = lstm1[label].rank(pct=True) * 0.13 + \
-                        lstm4_cu[label].rank(pct=True) * 0.10 + \
-                        lstm5_cu[label].rank(pct=True) * 0.05 + \
-                        lstm6_cu[label].rank(pct=True) * 0.10 + \
-                        fasttext_correct[label].rank(pct=True) * 0.13 + \
-                        hight_of_blend_v2[label].rank(pct=True) * 0.18 + \
-                        corr_blend[label].rank(pct=True) * 0.18 + \
-                        test_fasttext2[label].rank(pct=True) * 0.13
+    submission[label] = lstm1[label].rank(pct=True) * 0.10 + \
+                        lstm4_cu[label].rank(pct=True) * 0.04 + \
+                        lstm5_cu[label].rank(pct=True) * 0.02 + \
+                        lstm6_cu[label].rank(pct=True) * 0.04 + \
+                        fasttext_correct[label].rank(pct=True) * 0.10 + \
+                        hight_of_blend_v2[label].rank(pct=True) * 0.3 + \
+                        corr_blend[label].rank(pct=True) * 0.3 + \
+                        test_fasttext2[label].rank(pct=True) * 0.10
 
-submission.to_csv('../output/ensemble_test.csv', index=False)
+submission.to_csv('../output/ensemble_test3.csv', index=False)
