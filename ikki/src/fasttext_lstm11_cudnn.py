@@ -39,7 +39,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold
 
 
-window_length = 200 # The amount of words we look at per example. Experiment with this.
+window_length = 350 # The amount of words we look at per example. Experiment with this.
 
 """
 Data loading
@@ -51,6 +51,19 @@ test = pd.read_csv('../input/test.csv')
 # target classes
 classes = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
 
+"""
+Feature engineering
+"""
+train_feat = pd.read_pickle('../data/102_train.p')
+test_feat = pd.read_pickle('../data/102_test.p')
+
+eng_feat_cols = ['comment_len', 'word_cnt', 'word_cnt_unq', 'word_max_len']
+
+train = train.merge(train_feat, how='left', on='id')
+test = test.merge(test_feat, how='left', on='id')
+
+train[eng_feat_cols] = train[eng_feat_cols].apply(lambda x: np.log10(x + 1))
+test[eng_feat_cols] = test[eng_feat_cols].apply(lambda x: np.log10(x + 1))
 
 """
 Preprocessing functions
@@ -334,6 +347,8 @@ def data_generator(df, batch_size):
     batch_x = None # The current batch's x data
     batch_y = None # The current batch's y data
 
+    batch_x_feat = None # The current batch's x data
+
     while True: # Loop forever
         df = df.sample(frac=1) # Shuffle df each epoch
 
@@ -342,16 +357,19 @@ def data_generator(df, batch_size):
 
             if batch_x is None:
                 batch_x = np.zeros((batch_size, window_length, n_features), dtype='float32')
+                batch_x_feat = np.zeros((batch_size, len(eng_feat_cols)), dtype='float32')
                 batch_y = np.zeros((batch_size, len(classes)), dtype='float32')
 
             batch_x[batch_i] = text_to_vector(comment)
+            batch_x_feat[batch_i] = row[eng_feat_cols]
             batch_y[batch_i] = row[classes].values
             batch_i += 1
 
             if batch_i == batch_size:
                 # Ready to yield the batch
-                yield batch_x, batch_y
+                yield [batch_x, batch_x_feat], batch_y
                 batch_x = None
+                batch_x_feat = None
                 batch_y = None
                 batch_i = 0
 
@@ -363,26 +381,31 @@ def data_generator_for_test(df, batch_size):
     batch_i = 0 # Counter inside the current batch vector
     all_data_i = 0
     batch_x = None # The current batch's x data
+    batch_x_feat = None # The current batch's x data
 
     for i, row in df.iterrows():
         comment = row['comment_text']
 
         if batch_x is None:
             batch_x = np.zeros((batch_size, window_length, n_features), dtype='float32')
+            batch_x_feat = np.zeros((batch_size, len(eng_feat_cols)), dtype='float32')
 
         batch_x[batch_i] = text_to_vector(comment)
+        batch_x_feat[batch_i] = row[eng_feat_cols]
         batch_i += 1
         all_data_i += 1
 
         if batch_i == batch_size:
             # Ready to yield the batch
-            yield batch_x
+            yield [batch_x, batch_x_feat]
             batch_x = None
+            batch_x_feat = None
             batch_i = 0
         elif all_data_i == df_length:
             # Ready to yield the last batch
-            yield batch_x[:batch_i]
+            yield [batch_x[:batch_i], batch_x_feat[:batch_i]]
             batch_x = None
+            batch_x_feat = None
             batch_i = 0
 
 """
@@ -431,18 +454,22 @@ def build_lstm_stack_model(logdir='attention'):
     # Bidirectional-LSTM
     inp = Input(shape=(window_length, 300))
     inp_dr = SpatialDropout1D(0.05)(inp)
-    l_lstm = Bidirectional(CuDNNGRU(512, return_sequences=True))(inp_dr)
+    l_lstm = Bidirectional(CuDNNGRU(256, return_sequences=True))(inp_dr)
     l_lstm = Dropout(0.05)(l_lstm)
     x_gmp = GlobalMaxPool1D()(l_lstm)
     x_gap = GlobalAveragePooling1D()(l_lstm)
-    x = Concatenate()([x_gmp, x_gap])
-    x = Dropout(0.2)(x)
+    x_gmp_gap = Concatenate()([x_gmp, x_gap])
+    x_gmp_gap = Dropout(0.1)(x_gmp_gap)
+
+    inp_feat = Input(shape=(len(eng_feat_cols),))
+
+    x = Concatenate()([x_gmp_gap, inp_feat])
 
     x = Dense(256, activation="elu")(x)
     x = Dropout(0.25)(x)
     x = Dense(6, activation="sigmoid")(x)
 
-    model = Model(inputs=inp, outputs=x)
+    model = Model(inputs=[inp, inp_feat], outputs=x)
     model.compile(loss='binary_crossentropy', optimizer=Adam(lr=5e-4, amsgrad=True), metrics=['accuracy'])
 
     return model
@@ -470,7 +497,7 @@ kf = KFold(n_splits=n_splits, random_state=random_state)
 
 # Cross validation
 # Prediction of out-of-fold data
-pred_oof = pd.concat([train['id'], pd.DataFrame(np.zeros((train.shape[0], train.shape[1]-2)), columns=classes)], axis=1)
+pred_oof = pd.concat([train['id'], pd.DataFrame(np.zeros((train.shape[0], len(classes))), columns=classes)], axis=1)
 auc_pred_oof = []
 # Prediction of test dataset
 pred_test = pd.read_csv('../input/sample_submission.csv')
@@ -486,7 +513,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     # Convert validation set to fixed array
     print('Converting validation dataframe to array')
     #x_val = df_to_data(x_val)
-    #validation_generator = data_generator_for_test(x_val, 1024)
+    #validation_generator = data_generator_for_test(x_val, 128)
     #y_val = y_val.values
 
     # Build model
@@ -494,8 +521,8 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     model = build_lstm_stack_model()
 
     # Parameters
-    training_epochs = 10
-    batch_size = 64
+    training_epochs = 5
+    batch_size = 96
     training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
     training_generator = data_generator(x_train, batch_size)
 
@@ -515,7 +542,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
 
         # Predict at validation dataset
         print('Validating')
-        validation_batch_size = 1024
+        validation_batch_size = 128
         validation_steps = math.ceil(len(x_val) / validation_batch_size)
         validation_generator = data_generator_for_test(x_val, validation_batch_size)
         y_val_pred = model.predict_generator(validation_generator, steps=validation_steps, verbose=1)
@@ -526,7 +553,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
 
     # Predict at validation dataset
     print('Validating')
-    validation_batch_size = 1024
+    validation_batch_size = 128
     validation_steps = math.ceil(len(x_val) / validation_batch_size)
     pred_val_num = 10
     y_val_preds = np.array([])
@@ -555,7 +582,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
 
     # Predict test dataset several times at random
     print('Testing')
-    testing_batch_size = 1024
+    testing_batch_size = 128
     testing_steps = math.ceil(len(test) / testing_batch_size)
     pred_test_num = 10
     y_test = np.array([])

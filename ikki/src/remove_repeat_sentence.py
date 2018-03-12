@@ -22,10 +22,10 @@ test_feat = pd.read_pickle('../data/102_test.p')
 train = train.merge(train_feat, how='left', on='id')
 test = test.merge(test_feat, how='left', on='id')
 
-for i in tqdm(range(3, 300)):
+for i in tqdm.tqdm(range(3, 300)):
     pattern = r'([\w\W]{' + f'{i}' + r'})\1{1,}'
     p = re.compile(pattern)
-    rm_repeat_func = lambda x: p.sub(r'\1', x) if len(x) < i else x
+    rm_repeat_func = lambda x: p.sub(r'\1', x) if len(x) >= i else x
     train['comment_text'] = train.comment_text.apply(rm_repeat_func)
     test['comment_text'] = test.comment_text.apply(rm_repeat_func)
 
@@ -41,4 +41,3 @@ test = test[['id', 'comment_text']]
 
 train.to_pickle('../data/train_rm_repeat.p')
 test.to_pickle('../data/test_rm_repeat.p')
-
