@@ -39,7 +39,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold
 
 
-window_length = 350 # The amount of words we look at per example. Experiment with this.
+window_length = 400 # The amount of words we look at per example. Experiment with this.
 
 """
 Data loading
@@ -54,16 +54,43 @@ classes = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hat
 """
 Feature engineering
 """
+# count系
 train_feat = pd.read_pickle('../data/102_train.p')
 test_feat = pd.read_pickle('../data/102_test.p')
 
-eng_feat_cols = ['comment_len', 'word_cnt', 'word_cnt_unq', 'word_max_len']
 
 train = train.merge(train_feat, how='left', on='id')
 test = test.merge(test_feat, how='left', on='id')
 
-train[eng_feat_cols] = train[eng_feat_cols].apply(lambda x: np.log10(x + 1))
-test[eng_feat_cols] = test[eng_feat_cols].apply(lambda x: np.log10(x + 1))
+# Repeated sentencesを削除したテキスト
+train_rm_repeat = pd.read_pickle('../data/train_rm_repeat.p')
+test_rm_repeat = pd.read_pickle('../data/test_rm_repeat.p')
+
+train_rm_repeat.columns = ['id', 'comment_text_rm_repeat']
+test_rm_repeat.columns = ['id', 'comment_text_rm_repeat']
+
+train_rm_repeat['comment_len_rm_repeat'] = train_rm_repeat.comment_text_rm_repeat.apply(len)
+test_rm_repeat['comment_len_rm_repeat'] = test_rm_repeat.comment_text_rm_repeat.apply(len)
+
+train = train.merge(train_rm_repeat, how='left', on='id')
+test = test.merge(test_rm_repeat, how='left', on='id')
+
+train['diff_comment_len_repeat'] = train.comment_len - train.comment_len_rm_repeat
+test['diff_comment_len_repeat'] = test.comment_len - test.comment_len_rm_repeat
+
+# Delete original text
+del train['comment_text'], test['comment_text']
+
+train.columns = train.columns.str.replace('comment_text_rm_repeat', 'comment_text')
+test.columns = test.columns.str.replace('comment_text_rm_repeat', 'comment_text')
+
+# normalization for neural network inputs
+eng_feat_cols = ['comment_len', 'word_cnt', 'word_cnt_unq', 'word_max_len', 'comment_len_rm_repeat', 'diff_comment_len_repeat']
+
+train[eng_feat_cols] = train[eng_feat_cols].applymap(lambda x: np.log10(x + 1) if x >= 0 else -np.log10(np.abs(x) + 1))
+test[eng_feat_cols] = test[eng_feat_cols].applymap(lambda x: np.log10(x + 1) if x >= 0 else -np.log10(np.abs(x) + 1))
+
+
 
 """
 Preprocessing functions
@@ -164,8 +191,62 @@ def normalize(s):
     s = s.replace('God damn', 'goddamn')
     s = s.replace('knob end', 'knobend')
 
+    s = s.replace('f.u.c.k', ' fuck ')
+    s = s.replace('s.h.i.t', ' shit ')
+    s = s.replace('c.u.n.t', ' cunt ')
+    s = s.replace('a.s.s', ' ass ')
+    s = s.replace('b.i.t.c.h', ' bitch ')
+    s = s.replace(' youfuck ', ' you fuck ')
+    s = s.replace(' youi ', ' you i ')
+    s = s.replace(' youvvi ', ' you i ')
+    s = s.replace('arsehole', ' asshole ')
+    s = s.replace('schäbig', ' tackily ')
+    s = s.replace('u.s.a', ' usa ')
+    s = s.replace('hahahahello', ' hahaha hello ')
+    s = s.replace('shiti', ' shit i ')
+    s = s.replace(' fuk ', ' fuck ')
+    s = s.replace('cocksuckers', ' cocksucker ')
+    s = s.replace('youuhaxx0r', ' you hacker ')
+    s = s.replace('whtat', ' what ')
+    s = s.replace('go0verment', ' government ')
+    s = s.replace('fuck youf', ' fuck you ')
+    s = s.replace('mother fucjer', ' mother fucker ')
+    s = s.replace('fuck u ', ' fuck you ')
+    s = s.replace('fu ck ing ', ' fucking ')
+    s = s.replace('motherfukkin', ' motherfucking ')
+    s = s.replace('niggaz', ' niggas ')
+    s = s.replace('fucken', ' fucking ')
+    s = s.replace('fuckin ', ' fucking ')
+    s = s.replace('fukiin ', ' fucking ')
+    s = s.replace('shiit ', ' shit ')
+    s = s.replace('stupiidestt ', ' stupidest ')
+    s = s.replace('fuk-u', ' fuck you ')
+    s = s.replace('fuking ', ' fucking ')
+    s = s.replace('fukin ', ' fucking ')
+    s = s.replace('fcuk ', ' fuck ')
+    s = s.replace('fukers', ' fuck ')
+    s = s.replace('fukk', ' fuck ')
+    s = s.replace('afukin ', ' a fucking ')
+    s = s.replace('mudafukars ', ' motherfucker ')
+    s = s.replace('consfuc', ' fuck ')
+    s = s.replace('familfuk', ' fuck ')
+    s = s.replace('motherfuker', ' motherfucker ')
+    s = s.replace('krucafuks', ' kruca fuck ')
+    s = s.replace('fuken', ' fucking ')
+    s = s.replace('kukk', ' fuck ')
+    s = s.replace('ffukkkk', ' fuck ')
+    s = s.replace('ffukkkkkkkkkkkkkkkkkkkkkk', ' fuck ')
+    s = s.replace('fukn', ' fucking ')
+    s = s.replace('fukinggggg', ' fucking ')
+    s = s.replace('fukinggggggggggggggggggggggggggggg', ' fucking ')
+    s = s.replace('fukking', ' fucking ')
+    s = s.replace('fukcing', ' fucking ')
+
     # Expand contractions
     s = expand_contractions(s, CONTRACTION_MAP)
+
+    # Remove email address
+    s = re.sub(r'[^@]+@[^@]+\.[^@]+', 'EMAIL', s)
 
     # Remove links
     s = re.sub("(f|ht)tp(s?)://\\S+", "LINK", s)
@@ -250,11 +331,6 @@ def normalize(s):
     #TODO: 繋がっている単語はわけられない　'fuck fuck'=>'fuck', 'FUCKFUCK'=>'FUCKFUCK'
     s = re.sub(r'\b(\w+)( \1\b)+', r'\1', s)
 
-    # つながっている単語のUnique
-    # fuckfuckfuck => fuck, ksksksksksksksks => ks, fuckerfuckerfucker => fucker
-    for i in range(2, 20):
-        pattern = r'([a-z|0-9]{' + f'{i}' + r'})\1{1,}'
-        s = re.sub(pattern, r'\1', s)
 
     # Remove new lines
     # Replace numbers and symbols with language
@@ -455,7 +531,7 @@ def build_lstm_stack_model(logdir='attention'):
     inp = Input(shape=(window_length, 300))
     inp_dr = SpatialDropout1D(0.05)(inp)
     l_lstm = Bidirectional(CuDNNGRU(256, return_sequences=True))(inp_dr)
-    l_lstm = Dropout(0.05)(l_lstm)
+    l_lstm = Dropout(0.1)(l_lstm)
     x_gmp = GlobalMaxPool1D()(l_lstm)
     x_gap = GlobalAveragePooling1D()(l_lstm)
     x_gmp_gap = Concatenate()([x_gmp, x_gap])
@@ -465,8 +541,8 @@ def build_lstm_stack_model(logdir='attention'):
 
     x = Concatenate()([x_gmp_gap, inp_feat])
 
-    x = Dense(256, activation="elu")(x)
-    x = Dropout(0.25)(x)
+    x = Dense(300, activation="elu")(x)
+    x = Dropout(0.2)(x)
     x = Dense(6, activation="sigmoid")(x)
 
     model = Model(inputs=[inp, inp_feat], outputs=x)
@@ -484,7 +560,7 @@ test['comment_text'] = test['comment_text'].apply(normalize)
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'fasttext_lstm11_cudnn_cv'
+saving_filename = 'fasttext_lstm16_cudnn_prep_repeat_cv'
 
 # Define KFold and random state
 random_state = 4324455

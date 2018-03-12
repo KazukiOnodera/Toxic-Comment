@@ -39,7 +39,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold
 
 
-window_length = 350 # The amount of words we look at per example. Experiment with this.
+window_length = 500 # The amount of words we look at per example. Experiment with this.
 
 """
 Data loading
@@ -59,12 +59,12 @@ test_feat = pd.read_pickle('../data/102_test.p')
 
 eng_feat_cols = ['comment_len', 'word_cnt', 'word_cnt_unq', 'word_max_len']
 
+
 train = train.merge(train_feat, how='left', on='id')
 test = test.merge(test_feat, how='left', on='id')
 
 train[eng_feat_cols] = train[eng_feat_cols].apply(lambda x: np.log10(x + 1))
 test[eng_feat_cols] = test[eng_feat_cols].apply(lambda x: np.log10(x + 1))
-
 """
 Preprocessing functions
 """
@@ -453,24 +453,22 @@ Define models
 def build_lstm_stack_model(logdir='attention'):
     # Bidirectional-LSTM
     inp = Input(shape=(window_length, 300))
-    inp_dr = SpatialDropout1D(0.05)(inp)
-    l_lstm = Bidirectional(CuDNNGRU(256, return_sequences=True))(inp_dr)
-    l_lstm = Dropout(0.05)(l_lstm)
+    inp_dr = SpatialDropout1D(0.2)(inp)
+    l_lstm = Bidirectional(CuDNNGRU(152, return_sequences=True))(inp_dr)
+    l_lstm = Dropout(0.2)(l_lstm)
     x_gmp = GlobalMaxPool1D()(l_lstm)
     x_gap = GlobalAveragePooling1D()(l_lstm)
     x_gmp_gap = Concatenate()([x_gmp, x_gap])
-    x_gmp_gap = Dropout(0.1)(x_gmp_gap)
+    x_gmp_gap = Dropout(0.2)(x_gmp_gap)
 
     inp_feat = Input(shape=(len(eng_feat_cols),))
 
     x = Concatenate()([x_gmp_gap, inp_feat])
-
-    x = Dense(256, activation="elu")(x)
     x = Dropout(0.25)(x)
     x = Dense(6, activation="sigmoid")(x)
 
     model = Model(inputs=[inp, inp_feat], outputs=x)
-    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=5e-4, amsgrad=True), metrics=['accuracy'])
+    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=5e-3, amsgrad=True), metrics=['accuracy'])
 
     return model
 
@@ -484,7 +482,7 @@ test['comment_text'] = test['comment_text'].apply(normalize)
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'fasttext_lstm11_cudnn_cv'
+saving_filename = 'fasttext_lstm13_cudnn_cv'
 
 # Define KFold and random state
 random_state = 4324455
@@ -513,7 +511,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     # Convert validation set to fixed array
     print('Converting validation dataframe to array')
     #x_val = df_to_data(x_val)
-    #validation_generator = data_generator_for_test(x_val, 128)
+    #validation_generator = data_generator_for_test(x_val, 1024)
     #y_val = y_val.values
 
     # Build model

@@ -39,7 +39,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold
 
 
-window_length = 350 # The amount of words we look at per example. Experiment with this.
+window_length = 300 # The amount of words we look at per example. Experiment with this.
 
 """
 Data loading
@@ -59,12 +59,12 @@ test_feat = pd.read_pickle('../data/102_test.p')
 
 eng_feat_cols = ['comment_len', 'word_cnt', 'word_cnt_unq', 'word_max_len']
 
+
 train = train.merge(train_feat, how='left', on='id')
 test = test.merge(test_feat, how='left', on='id')
 
 train[eng_feat_cols] = train[eng_feat_cols].apply(lambda x: np.log10(x + 1))
 test[eng_feat_cols] = test[eng_feat_cols].apply(lambda x: np.log10(x + 1))
-
 """
 Preprocessing functions
 """
@@ -464,8 +464,6 @@ def build_lstm_stack_model(logdir='attention'):
     inp_feat = Input(shape=(len(eng_feat_cols),))
 
     x = Concatenate()([x_gmp_gap, inp_feat])
-
-    x = Dense(256, activation="elu")(x)
     x = Dropout(0.25)(x)
     x = Dense(6, activation="sigmoid")(x)
 
@@ -484,7 +482,7 @@ test['comment_text'] = test['comment_text'].apply(normalize)
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'fasttext_lstm11_cudnn_cv'
+saving_filename = 'fasttext_lstm12_cudnn_cv'
 
 # Define KFold and random state
 random_state = 4324455
@@ -555,7 +553,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     print('Validating')
     validation_batch_size = 128
     validation_steps = math.ceil(len(x_val) / validation_batch_size)
-    pred_val_num = 10
+    pred_val_num = 15
     y_val_preds = np.array([])
     for i in range(pred_val_num):
         validation_generator = data_generator_for_test(x_val, validation_batch_size)
@@ -584,7 +582,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     print('Testing')
     testing_batch_size = 128
     testing_steps = math.ceil(len(test) / testing_batch_size)
-    pred_test_num = 10
+    pred_test_num = 15
     y_test = np.array([])
     for i in range(pred_test_num):
         testing_generator = data_generator_for_test(test, testing_batch_size)

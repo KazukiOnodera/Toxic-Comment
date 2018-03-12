@@ -1,4 +1,4 @@
-python fasttext_lstm7_cudnn.py
-python fasttext_lstm8_cudnn.py
-python fasttext_lstm9_cudnn.py
-python fasttext_lstm11_cudnn.py
+python fasttext_lstm11_cudnn_prep_repeat.py
+python fasttext_lstm16_cudnn_prep_repeat.py
+python fasttext_lstm17_cudnn_prep_repeat.py
+python fasttext_lstm18_cudnn_prep_repeat.py

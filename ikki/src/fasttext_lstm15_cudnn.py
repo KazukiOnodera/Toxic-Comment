@@ -39,7 +39,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import KFold
 
 
-window_length = 350 # The amount of words we look at per example. Experiment with this.
+window_length = 50 # The amount of words we look at per example. Experiment with this.
 
 """
 Data loading
@@ -250,12 +250,6 @@ def normalize(s):
     #TODO: 繋がっている単語はわけられない　'fuck fuck'=>'fuck', 'FUCKFUCK'=>'FUCKFUCK'
     s = re.sub(r'\b(\w+)( \1\b)+', r'\1', s)
 
-    # つながっている単語のUnique
-    # fuckfuckfuck => fuck, ksksksksksksksks => ks, fuckerfuckerfucker => fucker
-    for i in range(2, 20):
-        pattern = r'([a-z|0-9]{' + f'{i}' + r'})\1{1,}'
-        s = re.sub(pattern, r'\1', s)
-
     # Remove new lines
     # Replace numbers and symbols with language
     s = s.replace('&', ' and ')
@@ -453,24 +447,22 @@ Define models
 def build_lstm_stack_model(logdir='attention'):
     # Bidirectional-LSTM
     inp = Input(shape=(window_length, 300))
-    inp_dr = SpatialDropout1D(0.05)(inp)
-    l_lstm = Bidirectional(CuDNNGRU(256, return_sequences=True))(inp_dr)
-    l_lstm = Dropout(0.05)(l_lstm)
+    inp_dr = SpatialDropout1D(0.2)(inp)
+    l_lstm = Bidirectional(CuDNNGRU(128, return_sequences=True))(inp_dr)
+    l_lstm = Dropout(0.2)(l_lstm)
     x_gmp = GlobalMaxPool1D()(l_lstm)
     x_gap = GlobalAveragePooling1D()(l_lstm)
     x_gmp_gap = Concatenate()([x_gmp, x_gap])
-    x_gmp_gap = Dropout(0.1)(x_gmp_gap)
+    x_gmp_gap = Dropout(0.2)(x_gmp_gap)
 
     inp_feat = Input(shape=(len(eng_feat_cols),))
 
     x = Concatenate()([x_gmp_gap, inp_feat])
-
-    x = Dense(256, activation="elu")(x)
     x = Dropout(0.25)(x)
     x = Dense(6, activation="sigmoid")(x)
 
     model = Model(inputs=[inp, inp_feat], outputs=x)
-    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=5e-4, amsgrad=True), metrics=['accuracy'])
+    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=5e-3, amsgrad=True), metrics=['accuracy'])
 
     return model
 
@@ -484,7 +476,7 @@ test['comment_text'] = test['comment_text'].apply(normalize)
 Training and evaluating with cross-validation
 """
 # Filename to save
-saving_filename = 'fasttext_lstm11_cudnn_cv'
+saving_filename = 'fasttext_lstm13_cudnn_cv'
 
 # Define KFold and random state
 random_state = 4324455
@@ -513,7 +505,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     # Convert validation set to fixed array
     print('Converting validation dataframe to array')
     #x_val = df_to_data(x_val)
-    #validation_generator = data_generator_for_test(x_val, 128)
+    #validation_generator = data_generator_for_test(x_val, 1024)
     #y_val = y_val.values
 
     # Build model
@@ -522,7 +514,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
 
     # Parameters
     training_epochs = 5
-    batch_size = 96
+    batch_size = 128
     training_steps_per_epoch = math.ceil(len(x_train) / batch_size)
     training_generator = data_generator(x_train, batch_size)
 
@@ -555,7 +547,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     print('Validating')
     validation_batch_size = 128
     validation_steps = math.ceil(len(x_val) / validation_batch_size)
-    pred_val_num = 10
+    pred_val_num = 30
     y_val_preds = np.array([])
     for i in range(pred_val_num):
         validation_generator = data_generator_for_test(x_val, validation_batch_size)
@@ -584,7 +576,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     print('Testing')
     testing_batch_size = 128
     testing_steps = math.ceil(len(test) / testing_batch_size)
-    pred_test_num = 10
+    pred_test_num = 30
     y_test = np.array([])
     for i in range(pred_test_num):
         testing_generator = data_generator_for_test(test, testing_batch_size)
