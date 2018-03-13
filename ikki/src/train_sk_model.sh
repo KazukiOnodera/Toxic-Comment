@@ -1,0 +1,6 @@
+python 5_fold_tuned_logreg1.py
+python 5_fold_tuned_logreg2.py
+python 5_fold_tuned_logreg3.py
+python 5_fold_tuned_logreg4.py
+python 5_fold_tuned_logreg5.py
+python 5_fold_tuned_logreg6.py

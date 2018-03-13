@@ -17,6 +17,8 @@ array([[0.2728691 , 0.00723547, 0.21662225, 0.00031662, 0.01985802,
 array([[1.0872832e-01, 2.1058016e-03, 5.0414674e-02, 7.0800590e-05,
         8.3896676e-03, 4.1742399e-04]], dtype=float32)
 
+model = keras.load(...)
+model.predict([text_to_vector('ikki tanaka'.split())])
 
 """
 correlation
