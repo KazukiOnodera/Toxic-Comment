@@ -22,8 +22,5 @@ train = pd.read_pickle('../data/{}2.p'.format('train'))
 for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     print('\nFold: {}'.format(fold_idx))
     # Train/validation dataset
-    x_train, x_val = train.iloc[train_index], train.iloc[val_index]
-    y_train, y_val = train[classes].iloc[train_index], train[classes].iloc[val_index]
-    y_val = y_val.values
-
+    build_id, valid_id = train.iloc[train_index][['id']], train.iloc[val_index][['id']]
 
