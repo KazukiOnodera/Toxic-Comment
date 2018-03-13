@@ -23,4 +23,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
     print('\nFold: {}'.format(fold_idx))
     # Train/validation dataset
     build_id, valid_id = train.iloc[train_index][['id']], train.iloc[val_index][['id']]
+    
+    build_id.to_pickle('../data/fold{}_build.p'.format(fold_idx))
+    valid_id.to_pickle('../data/fold{}_valid.p'.format(fold_idx))
 
