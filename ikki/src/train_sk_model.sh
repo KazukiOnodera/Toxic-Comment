@@ -1,4 +1,4 @@
-python 5_fold_tuned_logreg7.py
-python 5_fold_tuned_logreg8.py
-python 5_fold_tuned_logreg9.py
-python 5_fold_tuned_logreg10.py
+python 5_fold_tuned_logreg11.py
+python 5_fold_tuned_logreg12.py
+python 5_fold_tuned_logreg13.py
+python 5_fold_tuned_logreg14.py

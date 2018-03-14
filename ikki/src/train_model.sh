@@ -1,7 +1,8 @@
-python fasttext_lstm19_cudnn_prep_repeat_expand.py
-python fasttext_lstm20_cudnn_prep_repeat_expand.py
-python fasttext_lstm21_cudnn_prep_repeat_expand.py
-python fasttext_lstm22_cudnn_prep_repeat_expand.py
-python fasttext_lstm24_cudnn_prep_repeat_expand.py
-python fasttext_lstm23_cudnn_prep_repeat_expand_mlp.py
-python fasttext_lstm25_cudnn_prep_repeat_expand_conv.py
+python fasttext_capsule1.py
+python fasttext_capsule2.py
+python fasttext_capsule3.py
+python fasttext_capsule4.py
+python fasttext_capsule5.py
+python fasttext_capsule6.py
+python fasttext_capsule7.py
+python fasttext_capsule8.py
