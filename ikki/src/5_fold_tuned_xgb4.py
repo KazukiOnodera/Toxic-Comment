@@ -368,7 +368,7 @@ word_vectorizer = TfidfVectorizer(
     token_pattern=r'\w{1,}',
     stop_words='english',
     ngram_range=(1, 1),
-    max_features=35000)
+    max_features=15000)
 word_vectorizer.fit(all_text)
 train_word_features = word_vectorizer.transform(train_text)
 test_word_features = word_vectorizer.transform(test_text)
@@ -419,7 +419,7 @@ for j, (class_name) in enumerate(class_names):
     param = {}
     param['booster'] = 'gblinear'
     param['objective'] = 'binary:logistic'
-    param['eta'] = 0.05
+    param['eta'] = 0.5
     param['max_depth'] = 5
     param['silent'] = 0
     param['eval_metric'] = 'auc'

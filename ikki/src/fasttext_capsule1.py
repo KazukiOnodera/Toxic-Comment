@@ -607,7 +607,7 @@ for fold_idx, (train_index, val_index) in enumerate(kf.split(train)):
                                 training_generator,
                                 steps_per_epoch=training_steps_per_epoch,
                                 max_queue_size=50,
-                                workers=4,
+                                workers=2,
                                 epochs=1,
                                 )
 

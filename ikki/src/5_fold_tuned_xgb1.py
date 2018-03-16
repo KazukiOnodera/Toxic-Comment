@@ -368,7 +368,7 @@ word_vectorizer = TfidfVectorizer(
     token_pattern=r'\w{1,}',
     stop_words='english',
     ngram_range=(1, 1),
-    max_features=50000)
+    max_features=10000)
 word_vectorizer.fit(all_text)
 train_word_features = word_vectorizer.transform(train_text)
 test_word_features = word_vectorizer.transform(test_text)
@@ -382,7 +382,7 @@ char_vectorizer = TfidfVectorizer(
     analyzer='char',
     stop_words='english',
     ngram_range=(2, 6),
-    max_features=50000)
+    max_features=30000)
 char_vectorizer.fit(all_text)
 train_char_features = char_vectorizer.transform(train_text)
 test_char_features = char_vectorizer.transform(test_text)
@@ -419,7 +419,7 @@ for j, (class_name) in enumerate(class_names):
     param = {}
     param['booster'] = 'gblinear'
     param['objective'] = 'binary:logistic'
-    param['eta'] = 0.01
+    param['eta'] = 0.1
     param['max_depth'] = 7
     param['silent'] = 0
     param['eval_metric'] = 'auc'
@@ -431,7 +431,7 @@ for j, (class_name) in enumerate(class_names):
     param['nthread'] = 6
     param['seed'] = 407 * (j+1)
 
-    num_rounds = 800
+    num_rounds = 1000
 
     plst = list(param.items())
 

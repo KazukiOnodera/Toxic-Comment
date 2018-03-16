@@ -6,3 +6,4 @@ python fasttext_capsule5.py
 python fasttext_capsule6.py
 python fasttext_capsule7.py
 python fasttext_capsule8.py
+python fasttext_capsule9.py
